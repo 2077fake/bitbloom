@@ -107,26 +107,31 @@ textarea::selection{background:rgba(255,107,138,.22);}
 .stat .v{font-size:21px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.15;}
 .stat .v small{font-size:12px;font-weight:700;color:var(--muted);margin-left:2px;}
 .stat .sub{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.5;}
-.bar{display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:8px;background:#f0f1f5;}
+.bar{display:flex;height:9px;border-radius:5px;overflow:hidden;margin-top:9px;background:#eef0f4;}
 .bar i{display:block;height:100%;}
 
-/* ---------- 编码输出行 ---------- */
-.row{
-  display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px dashed var(--line2);
-}
-.row:last-child{border-bottom:none;}
-.row .label{
-  flex:0 0 82px;font-size:11.5px;font-weight:800;color:var(--ink);padding-top:2px;
-}
-.row .label small{display:block;font-weight:600;color:var(--muted);font-size:10px;margin-top:2px;}
+/* ---------- 编码输出 ----------
+   排版原则：hex dump 是等宽块内容，不是表单字段。
+   1) 标签移到内容上方做成行头，复制按钮跟在同一行，不再挤在 82px 窄列里折行；
+   2) 内容盒子用 align-self:flex-start 收缩到实际行宽，绝不拉伸成空灰大框；
+   3) 整体两列网格：窄行（十六进制 / 二进制）并排，宽行（Base64）通栏，
+      避免五种编码竖着堆成一列、右侧全空。 */
+.enc{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:26px;row-gap:16px;}
+.enc > .empty{grid-column:1 / -1;}
+.row{display:flex;flex-direction:column;gap:7px;min-width:0;}
+.row.wide{grid-column:1 / -1;}
+.row-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.row-head .label{font-size:12.5px;font-weight:800;color:var(--ink);letter-spacing:.2px;}
+.row-head .sub{font-size:11px;color:var(--muted);line-height:1.5;}
+.row-head .ops{display:flex;gap:6px;}
 .row .val{
-  flex:1;min-width:0;font:12.5px/1.75 var(--mono);color:#3c4354;
+  align-self:flex-start;max-width:100%;
+  font:12.5px/1.7 var(--mono);color:#3c4354;
   white-space:pre-wrap;word-break:break-all;
-  background:#fafbfc;border:1px solid var(--line2);border-radius:9px;padding:8px 10px;
-  max-height:260px;overflow:auto;
+  background:#fafbfc;border:1px solid var(--line2);border-radius:10px;padding:9px 12px;
+  max-height:380px;overflow:auto;
 }
 .row .val.warn{color:var(--danger);background:#fff6f6;border-color:#ffd9d9;}
-.row .ops{flex:0 0 auto;display:flex;gap:6px;padding-top:2px;}
 
 /* ---------- 反向解码三栏 ---------- */
 .decode{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
@@ -188,9 +193,7 @@ textarea::selection{background:rgba(255,107,138,.22);}
 
 @media (max-width:860px){
   .decode{grid-template-columns:1fr;}
-  .row{flex-wrap:wrap;}
-  .row .label{flex:0 0 100%;}
-  .row .ops{margin-left:auto;}
+  .enc{grid-template-columns:1fr;row-gap:14px;}
   .logo{font-size:19px;}
 }
 @media (max-width:560px){
@@ -239,7 +242,7 @@ textarea::selection{background:rgba(255,107,138,.22);}
       <h2>编码输出</h2>
       <span class="desc">当前文本在目标编码下的字节表示，可直接复制使用</span>
     </div>
-    <div class="card-body" id="encodeBody"></div>
+    <div class="card-body enc" id="encodeBody"></div>
   </section>
 
   <!-- 反向解码 -->
@@ -558,15 +561,17 @@ function renderEncode(text) {
   rows.push(row("UTF-8 十六进制流", "标准 hex dump，每行 8 字节",
     hexLines.join("\n"), false, "UTF-8 连续十六进制", hexPairs.join("")));
 
-  // UTF-8 · Base64（MIME 标准每行 76 字符）
+  // UTF-8 · Base64（MIME 标准每行 76 字符）——76 字符约 570px，通栏
   rows.push(row("UTF-8 Base64", "每行 76 字符，可直接用于 Data URL",
-    chunkStr(bytesToBase64(u8), 76), false, "UTF-8 Base64", bytesToBase64(u8)));
+    chunkStr(bytesToBase64(u8), 76), false, "UTF-8 Base64", bytesToBase64(u8), true));
 
   // UTF-8 · 二进制（每行 4 字节，便于逐位对照）
   const binPairs = [];
   for (let i = 0; i < u8.length; i++) binPairs.push(("00000000" + u8[i].toString(2)).slice(-8));
   const binLines = [];
   for (let i = 0; i < binPairs.length; i += 4) binLines.push(binPairs.slice(i, i + 4).join(" "));
+  // 二进制恒为窄行：有 Latin-1 十六进制时与它并排，无它与 Latin-1 提示行并排，
+  // 两种情况都能凑成整齐的两列，不会出现通栏行右侧空一大块
   rows.push(row("UTF-8 二进制", "每行 4 字节", binLines.join("\n"), false, "UTF-8 二进制", binPairs.join(" ")));
 
   // Latin-1
@@ -577,7 +582,7 @@ function renderEncode(text) {
     rows.push(row("Latin-1 十六进制", "ISO-8859-1，每行 8 字节",
       l1Lines.join("\n"), false, "Latin-1 十六进制", l1Pairs.join("")));
     rows.push(row("Latin-1 Base64", "每行 76 字符",
-      chunkStr(bytesToBase64(l1), 76), false, "Latin-1 Base64", bytesToBase64(l1)));
+      chunkStr(bytesToBase64(l1), 76), false, "Latin-1 Base64", bytesToBase64(l1), true));
   } else {
     const bad = Array.from(text).find(c => c.codePointAt(0) > 0xFF);
     rows.push(row("Latin-1", "单字节编码，仅能表示 U+0000–U+00FF",
@@ -590,14 +595,19 @@ function renderEncode(text) {
 
 /**
  * 生成一行编码输出。
+ * 结构：行头（标签 + 说明 + 复制按钮）在上，内容块在下，内容块收缩到实际行宽。
  * @param copyValue 可选：点击「复制」时实际写入剪贴板的内容，默认等于展示值。
  *                  用于「展示用 hex dump 分行、复制给无分隔连续串」的场景。
+ * @param wide      可选：true 时该行通栏占满两列（用于 Base64 等宽行）。
  */
-function row(label, sub, value, warn, copyLabel, copyValue) {
+function row(label, sub, value, warn, copyLabel, copyValue, wide) {
   const cv = copyValue === undefined ? value : copyValue;
-  return '<div class="row"><div class="label">' + label + (sub ? "<small>" + sub + "</small>" : "") + '</div>' +
+  return '<div class="row' + (wide ? " wide" : "") + '">' +
+    '<div class="row-head"><span class="label">' + label + '</span>' +
+    (sub ? '<span class="sub">' + sub + '</span>' : '') +
+    (warn ? '' : '<span class="ops"><button class="btn tiny" data-copy="' + escapeAttr(copyLabel) + '" data-val="' + escapeAttr(cv) + '">复制</button></span>') +
+    '</div>' +
     '<div class="val' + (warn ? " warn" : "") + '">' + escapeHtml(value) + '</div>' +
-    (warn ? "" : '<div class="ops"><button class="btn tiny" data-copy="' + escapeAttr(copyLabel) + '" data-val="' + escapeAttr(cv) + '">复制</button></div>') +
     '</div>';
 }
 

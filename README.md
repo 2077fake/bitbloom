@@ -92,6 +92,10 @@ python -m http.server 8000
 
 ---
 
+## 架构
+
+![BitBloom 架构](docs/architecture.png)
+
 ## 项目结构
 
 ```

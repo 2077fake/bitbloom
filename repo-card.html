@@ -162,6 +162,21 @@ body{
 .sw i{position:absolute;left:6px;right:6px;height:3px;border-radius:2px;display:block;}
 
 .ctl input[type=range]{width:100%;accent-color:var(--accent);margin:0;}
+.ctl input[type=password]{
+  width:100%;border:1px solid var(--line-2);border-radius:9px;padding:7px 10px;
+  font-size:12px;font-family:inherit;background:#fff;color:var(--ink-2);
+}
+.ctl input[type=password]:focus{outline:2px solid var(--accent-soft);border-color:var(--accent);}
+
+/* ---------- GitHub API ---------- */
+.api-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:2px;}
+.btn.gh{background:linear-gradient(92deg,#24292f,#454c54);color:#fff;border-color:transparent;}
+.btn.gh:hover{background:linear-gradient(92deg,#1b1f24,#3a4046);}
+.btn.gh:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.api-status{font-size:11.5px;color:var(--muted);}
+.api-status.ok{color:#15803d;}
+.api-status.warn{color:#b45309;font-weight:600;}
+.api-status.err{color:#c2410c;font-weight:600;}
 .ctl-label b{color:var(--accent);font-variant-numeric:tabular-nums;}
 
 .seg.full{display:flex;width:100%;}
@@ -202,7 +217,7 @@ body{
   <header class="topbar">
     <div class="brand">
       <div class="logo">RepoCard · 仓库分享卡生成器</div>
-      <div class="tag">把 GitHub 仓库变成一张体面的分享图 · 手动填写、本地渲染，不请求 GitHub API</div>
+      <div class="tag">把 GitHub 仓库变成一张体面的分享图 · 一键从 GitHub 拉取，也可手动填写；仅访问 api.github.com</div>
     </div>
     <div class="top-actions">
       <div class="seg" id="scaleSeg" title="导出倍率">
@@ -221,9 +236,9 @@ body{
     <section class="pane">
       <div class="pane-head">
         <span class="ph-title">仓库信息</span>
-        <span class="chip">手动填写</span>
+        <span class="chip" id="apiModeChip">API 优先</span>
         <span class="spacer"></span>
-        <span class="ph-hint">不请求 GitHub API</span>
+        <span class="ph-hint" id="apiModeHint">额度用尽自动回退手动填写</span>
       </div>
       <div class="form" id="form">
         <div class="fg">
@@ -231,6 +246,11 @@ body{
           <div class="row2">
             <input type="text" id="inpOwner" placeholder="拥有者，如 oknoo" spellcheck="false" autocomplete="off">
             <input type="text" id="inpName" placeholder="仓库名，如 1024" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="api-bar">
+            <button class="btn mini gh" id="btnFetch" type="button">从 GitHub 拉取</button>
+            <span class="api-status" id="apiStatus">未请求 · 匿名 60 次/小时</span>
+            <span class="ph-hint">回车即可拉取</span>
           </div>
         </div>
         <div class="fg">
@@ -301,6 +321,11 @@ body{
       <div class="ctl-note">「主题色」跟随主题；渐变背景下点主题会自动切回。</div>
     </div>
     <div class="ctl">
+      <div class="ctl-label">GitHub API <span class="ph-hint" id="apiQuota">60 / 60 · 匿名</span></div>
+      <div class="ctl-note">拉取仓库信息、统计与语言占比；匿名 60 次/小时，额度用尽自动回退手动填写。</div>
+      <input type="password" id="inpToken" placeholder="可选：Token（仅存本机）" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="ctl">
       <div class="ctl-label">画布比例</div>
       <div class="seg full" id="propSeg"></div>
     </div>
@@ -316,7 +341,7 @@ body{
 
   <p class="note">
     快捷键：<code>Ctrl / ⌘ + S</code> 导出 PNG · <code>Ctrl / ⌘ + Enter</code> 复制图片到剪贴板 ·
-    「分享链接」会把当前填写内容编码进地址栏，打开即可还原；本工具不请求 GitHub API。
+    「分享链接」会把当前填写内容编码进地址栏，打开即可还原；点「从 GitHub 拉取」时只向 api.github.com 发请求，额度用尽自动回退为手动填写。
   </p>
 </div>
 
@@ -1151,6 +1176,7 @@ function computeLayout(st) {
     T: T, B: B, PR: PR, W: W, H: H, P: P,
     radius: Math.max(0, Math.min(48, Math.round(Number(st.radius) || 0))),
     letter: letter, ownerText: ownerText, nameText: nameText, nameSize: nameSize, textX: textX,
+    avatar: st.avatar || null,
     headerTop: pos.header,
     descLines: lp.dLines, descTop: pos.desc,
     statsTop: pos.stats, statItems: fitted, statGap: PR.statGap,
@@ -1280,20 +1306,32 @@ function drawHeader(ctx, L) {
   const avS = PR.avatar;
   const avY = L.headerTop + (PR.ownerSize + 14 + L.nameSize + 14 - avS) / 2;
 
-  rr(ctx, L.P, avY, avS, avS, avS * 0.28);
-  ctx.fillStyle = T.accentSoft;
-  ctx.fill();
-  ctx.strokeStyle = hexA(T.accent, 0.32);
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  if (L.avatar) {
+    ctx.save();
+    rr(ctx, L.P, avY, avS, avS, avS * 0.28);
+    ctx.clip();
+    ctx.drawImage(L.avatar, L.P, avY, avS, avS);
+    ctx.restore();
+    rr(ctx, L.P, avY, avS, avS, avS * 0.28);
+    ctx.strokeStyle = hexA(T.ink, 0.14);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else {
+    rr(ctx, L.P, avY, avS, avS, avS * 0.28);
+    ctx.fillStyle = T.accentSoft;
+    ctx.fill();
+    ctx.strokeStyle = hexA(T.accent, 0.32);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
-  fontCtx(ctx, Math.round(avS * 0.48), "800");
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = T.accent;
-  ctx.fillText(L.letter, L.P + avS / 2, avY + avS / 2 + 1);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
+    fontCtx(ctx, Math.round(avS * 0.48), "800");
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = T.accent;
+    ctx.fillText(L.letter, L.P + avS / 2, avY + avS / 2 + 1);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
 
   fontCtx(ctx, PR.ownerSize, "600");
   ctx.fillStyle = T.muted;
@@ -1473,7 +1511,20 @@ const state = {
   stars: SAMPLE.stars, forks: SAMPLE.forks, watchers: SAMPLE.watchers,
   lang: SAMPLE.lang, langs: SAMPLE.langs, topics: SAMPLE.topics,
   homepage: SAMPLE.homepage, license: SAMPLE.license,
-  theme: "cream", prop: "og", radius: 24, bg: "theme", exportScale: 2
+  theme: "cream", prop: "og", radius: 24, bg: "theme", exportScale: 2,
+  avatar: null            // GitHub 真实头像（ImageBitmap）；拉取失败时回退为字母色块
+};
+
+/* GitHub API 状态：额度、Token、当前模式 */
+const GH_API = "https://api.github.com";
+const TOKEN_KEY = "repocard.ghToken";
+const apiState = {
+  token: "",
+  limit: 60,
+  remaining: 60,
+  reset: 0,          // 额度重置时间戳（毫秒）
+  busy: false,
+  mode: "idle"       // idle | loading | ok | manual
 };
 
 const $ = id => document.getElementById(id);
@@ -1486,7 +1537,9 @@ const els = {
   inpOwner: $("inpOwner"), inpName: $("inpName"), inpDesc: $("inpDesc"),
   inpStars: $("inpStars"), inpForks: $("inpForks"), inpWatch: $("inpWatch"),
   selLang: $("selLang"), inpLangs: $("inpLangs"), inpTopics: $("inpTopics"),
-  inpHome: $("inpHome"), inpLicense: $("inpLicense"), qrPreview: $("qrPreview")
+  inpHome: $("inpHome"), inpLicense: $("inpLicense"), qrPreview: $("qrPreview"),
+  btnFetch: $("btnFetch"), apiStatus: $("apiStatus"), apiQuota: $("apiQuota"),
+  inpToken: $("inpToken"), apiModeChip: $("apiModeChip"), apiModeHint: $("apiModeHint")
 };
 
 let layoutCache = null;
@@ -1641,6 +1694,7 @@ function toast(msg, isErr) {
 
 $("btnSample").addEventListener("click", () => {
   Object.assign(state, SAMPLE);
+  state.avatar = null;
   writeForm(); syncSwatches(); scheduleRender();
   toast("已载入示例仓库");
 });
@@ -1668,8 +1722,181 @@ $("btnClear").addEventListener("click", () => {
   state.stars = 0; state.forks = 0; state.watchers = 0;
   state.lang = ""; state.langs = ""; state.topics = "";
   state.homepage = ""; state.license = "";
+  state.avatar = null;
   writeForm(); scheduleRender();
   toast("已清空，卡片进入空白状态");
+});
+
+/* ============================================================
+   8.5 GitHub API 拉取（额度用尽 / 请求失败自动回退手动填写）
+   ============================================================ */
+function apiHeaders() {
+  const h = { "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  if (apiState.token) h["Authorization"] = "Bearer " + apiState.token;
+  return h;
+}
+
+/** 读取限额头：GitHub 在 CORS 响应里暴露了 x-ratelimit-* */
+function readQuota(res) {
+  const lim = res.headers.get("x-ratelimit-limit");
+  const rem = res.headers.get("x-ratelimit-remaining");
+  const rst = res.headers.get("x-ratelimit-reset");
+  if (lim !== null) apiState.limit = +lim;
+  if (rem !== null) apiState.remaining = +rem;
+  if (rst !== null) apiState.reset = (+rst) * 1000;
+}
+
+function resetText() {
+  if (!apiState.reset) return "";
+  const d = new Date(apiState.reset);
+  return " · " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") + " 恢复";
+}
+
+function setApiStatus(text, cls) {
+  els.apiStatus.textContent = text;
+  els.apiStatus.className = "api-status" + (cls ? " " + cls : "");
+}
+
+function updateApiQuota() {
+  els.apiQuota.textContent = apiState.remaining + " / " + apiState.limit + (apiState.token ? " · Token" : " · 匿名");
+}
+
+function setApiMode(mode) {
+  apiState.mode = mode;
+  if (mode === "ok") {
+    els.apiModeChip.textContent = "API 拉取";
+    els.apiModeHint.textContent = "额度用尽自动回退手动填写";
+  } else if (mode === "manual") {
+    els.apiModeChip.textContent = "手动填写";
+    els.apiModeHint.textContent = "API 不可用，已回退";
+  } else if (mode === "loading") {
+    els.apiModeChip.textContent = "拉取中";
+    els.apiModeHint.textContent = "正在请求 api.github.com";
+  } else {
+    els.apiModeChip.textContent = "API 优先";
+    els.apiModeHint.textContent = "额度用尽自动回退手动填写";
+  }
+}
+
+/** 语言字节数 → 「名称 百分比」列表（最多 5 段，其余合并为「其他」） */
+function formatLangBytes(map) {
+  const entries = Object.keys(map || {}).map(k => [k, map[k]]).filter(e => e[1] > 0);
+  if (!entries.length) return { text: "", main: "" };
+  entries.sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((a, b) => a + b[1], 0);
+  const list = entries.slice(0, 5).map(e => ({ name: e[0], pct: e[1] / total * 100 }));
+  const rest = entries.slice(5);
+  if (rest.length) list.push({ name: "其他", pct: rest.reduce((a, b) => a + b[1], 0) / total * 100 });
+  const text = list.map(l => l.name + " " + (Math.round(l.pct * 10) / 10)).join(", ");
+  return { text: text, main: entries[0][0] };
+}
+
+/** 拉取真实头像：必须 fetch→blob→createImageBitmap；
+    直接 drawImage 跨域图片会污染画布，导致导出 PNG 抛 SecurityError */
+async function loadAvatar(url) {
+  if (!url) { state.avatar = null; return; }
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    if (!res.ok) throw new Error("status " + res.status);
+    const blob = await res.blob();
+    const bmp = await createImageBitmap(blob);
+    if (state.avatar && state.avatar.close) state.avatar.close();
+    state.avatar = bmp;
+  } catch (e) {
+    state.avatar = null;   // 拉不到就保留字母色块，不影响其它内容
+  }
+}
+
+function applyRepoData(d, langText, mainLang) {
+  if (d.owner && d.owner.login) state.owner = d.owner.login;
+  if (d.name) state.name = d.name;
+  state.desc = d.description || "";
+  state.stars = d.stargazers_count || 0;
+  state.forks = d.forks_count || 0;
+  state.watchers = (d.subscribers_count != null ? d.subscribers_count : (d.watchers_count || 0));
+  // 许可证：GitHub 对非标准许可返回 spdx_id = "NOASSERTION"，直接印在卡片上很难看，按无许可处理
+  const spdx = d.license ? (d.license.spdx_id || "") : "";
+  const lname = d.license ? (d.license.name || "") : "";
+  state.license = (spdx && spdx !== "NOASSERTION") ? spdx
+    : ((lname && lname !== "Other" && lname !== "NOASSERTION") ? lname : "");
+  state.homepage = d.homepage || "";
+  state.topics = Array.isArray(d.topics) ? d.topics.join(", ") : "";
+  if (langText) state.langs = langText;
+  if (mainLang && LANG_COLORS[mainLang]) state.lang = mainLang;
+  writeForm();
+  syncSwatches();
+}
+
+function apiFail(msg, cls) {
+  setApiStatus(msg, cls || "err");
+  setApiMode("manual");
+  toast(msg, true);
+}
+
+async function fetchRepoFromGitHub() {
+  const owner = els.inpOwner.value.trim();
+  const name = els.inpName.value.trim();
+  if (!owner || !name) { toast("请先填写拥有者与仓库名", true); return; }
+  if (apiState.busy) return;
+  apiState.busy = true;
+  els.btnFetch.disabled = true;
+  setApiStatus("拉取中…");
+  setApiMode("loading");
+  const headers = apiHeaders();
+  const base = GH_API + "/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(name);
+  try {
+    const res = await fetch(base, { headers: headers });
+    readQuota(res);
+    if (res.status === 404) { apiFail("找不到该仓库，检查拥有者与仓库名"); return; }
+    if (res.status === 401) { apiFail("Token 无效或已过期，请清除后重试"); return; }
+    if (res.status === 403 || res.status === 429) {
+      if (apiState.remaining <= 0) { apiFail("API 额度已用尽" + resetText() + "，已回退为手动填写", "warn"); return; }
+      apiFail("GitHub 拒绝了这次请求（可能触发滥用检测），已回退为手动填写");
+      return;
+    }
+    if (!res.ok) { apiFail("GitHub 返回 " + res.status + "，已回退为手动填写"); return; }
+    const data = await res.json();
+
+    // 语言占比是第二次请求；失败不影响其它字段
+    let langText = "", mainLang = "";
+    try {
+      const lres = await fetch(base + "/languages", { headers: headers });
+      readQuota(lres);
+      if (lres.ok) {
+        const parsed = formatLangBytes(await lres.json());
+        langText = parsed.text; mainLang = parsed.main;
+      }
+    } catch (e) { /* 忽略：语言占比可手动补 */ }
+
+    applyRepoData(data, langText, mainLang);
+    await loadAvatar(data.owner && data.owner.avatar_url);
+    render();
+    setApiStatus("已同步 " + state.owner + "/" + state.name + " · 剩余 " + apiState.remaining + "/" + apiState.limit, "ok");
+    setApiMode("ok");
+    toast("已从 GitHub 拉取仓库信息");
+  } catch (e) {
+    apiFail("网络不可用（" + ((e && e.message) || "未知错误") + "），已回退为手动填写");
+  } finally {
+    apiState.busy = false;
+    els.btnFetch.disabled = false;
+    updateApiQuota();
+  }
+}
+
+els.btnFetch.addEventListener("click", () => { fetchRepoFromGitHub(); });
+["inpOwner", "inpName"].forEach(id => {
+  $(id).addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); fetchRepoFromGitHub(); }
+  });
+});
+els.inpToken.addEventListener("change", () => {
+  apiState.token = els.inpToken.value.trim();
+  try {
+    if (apiState.token) localStorage.setItem(TOKEN_KEY, apiState.token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch (e) { /* 隐私模式等场景忽略 */ }
+  updateApiQuota();
+  toast(apiState.token ? "Token 已保存到本机，仅用于 api.github.com 请求" : "已清除 Token，恢复匿名额度");
 });
 
 /* ============================================================
@@ -1825,6 +2052,9 @@ function boot() {
   buildThemeSwatches();
   buildBgSwatches();
   buildPropSeg();
+  try { apiState.token = localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { apiState.token = ""; }
+  els.inpToken.value = apiState.token;
+  updateApiQuota();
   writeForm();
   syncSwatches();
   render();

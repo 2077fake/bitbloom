@@ -1,0 +1,11 @@
+# 本地工作区状态（WorkBuddy 项目数据，勿提交）
+.workbuddy/
+
+# 系统与编辑器杂项
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+node_modules/
+.vscode/
+.idea/

@@ -79,8 +79,6 @@ python -m http.server 8000
 ├── index.html              入口页，工具导览
 ├── binary-gallery.html     二进制画廊
 ├── code-card.html          CodeCard 代码卡片生成器
-├── assets/
-│   └── heart-card.png      爱心代码卡片示例
 ├── LICENSE                 MIT
 └── README.md
 ```

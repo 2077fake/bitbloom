@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RepoCard · GitHub 仓库分享卡生成器</title>
+<style>
+/* ============================================================
+   RepoCard · GitHub 仓库分享卡生成器
+   单文件实现：原生 HTML / CSS / JS，零外联。
+   卡片全部在本地 Canvas 绘制，二维码由内置编码器生成，
+   不请求任何 GitHub API，填写内容不会离开浏览器。
+   ============================================================ */
+:root{
+  --bg:#eceff4;
+  --panel:#ffffff;
+  --panel-2:#f7f8fb;
+  --ink:#11141b;
+  --ink-2:#3c4354;
+  --muted:#7a8296;
+  --line:#e2e6ee;
+  --line-2:#eef1f6;
+  --accent:#4f46e5;
+  --accent-ink:#3730a3;
+  --accent-soft:#eef0ff;
+  --danger:#c0392b;
+  --radius:16px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:var(--sans);
+  background:
+    radial-gradient(1200px 600px at 12% -8%, #ffffff 0%, rgba(255,255,255,0) 60%),
+    radial-gradient(900px 500px at 96% 0%, #eef4ff 0%, rgba(238,244,255,0) 55%),
+    var(--bg);
+  color:var(--ink);
+  min-height:100vh;
+  padding:16px 16px 40px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1280px;margin:0 auto;}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 16px;box-shadow:var(--shadow);margin-bottom:14px;
+}
+.brand{display:flex;flex-direction:column;gap:3px;margin-right:auto;min-width:0;}
+.logo{
+  font-size:19px;font-weight:800;letter-spacing:.4px;line-height:1.1;
+  background:linear-gradient(92deg,#4f46e5 0%,#0d8fd8 55%,#0ea5e9 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.tag{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.top-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+
+/* ---------- 通用控件 ---------- */
+.btn{
+  cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink-2);
+  border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;font-family:inherit;
+  transition:background .16s,border-color .16s,color .16s,transform .1s;white-space:nowrap;
+}
+.btn:hover{background:var(--panel-2);border-color:#d3d9e6;}
+.btn:active{transform:translateY(1px);}
+.btn.primary{
+  background:linear-gradient(92deg,var(--accent),#0d8fd8);color:#fff;border-color:transparent;
+  box-shadow:0 6px 16px rgba(59,110,225,.28);
+}
+.btn.primary:hover{filter:brightness(1.06);}
+.btn.ghost{background:var(--accent-soft);color:var(--accent-ink);border-color:#e2e2fb;}
+.btn.mini{padding:6px 12px;font-size:12px;border-radius:9px;}
+
+.seg{display:inline-flex;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px;}
+.seg button{
+  cursor:pointer;border:none;background:transparent;color:var(--muted);
+  padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;font-family:inherit;transition:.15s;
+}
+.seg button.on{background:#fff;color:var(--accent-ink);box-shadow:0 1px 3px rgba(16,24,40,.10);}
+
+/* ---------- 工作区：左右分栏 ---------- */
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);gap:14px;align-items:stretch;}
+.pane{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;min-width:0;
+}
+.pane-head{
+  display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line-2);
+  background:var(--panel-2);flex-wrap:wrap;
+}
+.ph-title{font-size:13px;font-weight:800;letter-spacing:.3px;}
+.ph-hint{font-size:11.5px;color:var(--muted);}
+.spacer{flex:1;}
+.chip{
+  font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent-soft);
+  border:1px solid #e3e3fb;border-radius:999px;padding:2px 9px;
+}
+.pane-foot{
+  display:flex;align-items:center;gap:8px;padding:9px 12px;border-top:1px solid var(--line-2);
+  background:var(--panel-2);flex-wrap:wrap;
+}
+.tip{font-size:11.5px;color:var(--muted);margin-left:auto;}
+
+/* ---------- 表单 ---------- */
+.form{padding:14px 16px 18px;display:flex;flex-direction:column;gap:14px;overflow:auto;flex:1;}
+.fg{display:flex;flex-direction:column;gap:6px;min-width:0;}
+.fg-label{font-size:12px;font-weight:700;color:var(--ink-2);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.fg-label .hint{font-size:11px;color:var(--muted);font-weight:500;}
+.fg input[type=text],.fg input[type=number],.fg textarea,.fg select{
+  width:100%;border:1px solid var(--line);border-radius:10px;padding:8px 10px;
+  font-size:13px;font-family:inherit;background:#fff;color:var(--ink);outline:none;transition:.15s;
+}
+.fg textarea{resize:vertical;min-height:62px;line-height:1.6;}
+.fg select:focus,.fg input:focus,.fg textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.12);}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.linkbox{
+  font:12.5px/1.5 var(--mono);color:var(--ink-2);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:10px;padding:9px 11px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* ---------- 预览 ---------- */
+.stage{
+  flex:1;display:flex;align-items:center;justify-content:center;padding:22px;
+  background-color:#f7f8fb;
+  background-image:radial-gradient(circle, #d7dbe4 1px, transparent 1px);
+  background-size:16px 16px;
+  overflow:auto;
+}
+#preview{max-width:100%;height:auto;display:block;border-radius:4px;}
+
+/* ---------- 控制面板 ---------- */
+.controls{
+  margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:14px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:14px 18px;
+}
+.ctl{display:flex;flex-direction:column;gap:8px;min-width:0;}
+.ctl-label{font-size:12px;font-weight:700;color:var(--ink-2);display:flex;align-items:center;gap:6px;}
+.ctl-note{font-size:11.5px;color:var(--muted);line-height:1.6;}
+
+.swatches{display:flex;gap:8px;flex-wrap:wrap;}
+.sw{
+  width:46px;height:34px;border-radius:9px;cursor:pointer;border:2px solid transparent;
+  box-shadow:0 0 0 1px rgba(16,24,40,.10);position:relative;overflow:hidden;padding:0;
+  transition:transform .12s,box-shadow .12s;
+}
+.sw:hover{transform:translateY(-1px);}
+.sw.on{box-shadow:0 0 0 2px var(--accent);}
+.sw i{position:absolute;left:6px;right:6px;height:3px;border-radius:2px;display:block;}
+
+.seg.full{display:flex;width:100%;}
+.seg.full button{flex:1;text-align:center;}
+
+/* ---------- 提示 ---------- */
+.toast{
+  position:fixed;left:50%;bottom:28px;transform:translate(-50%,16px);
+  background:rgba(17,20,27,.94);color:#fff;font-size:13px;font-weight:600;
+  padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.24s;z-index:99;
+  box-shadow:0 10px 30px rgba(0,0,0,.22);max-width:86vw;text-align:center;
+}
+.toast.show{opacity:1;transform:translate(-50%,0);}
+.toast.err{background:#a51d2d;}
+
+.note{
+  margin-top:12px;font-size:12px;color:var(--muted);line-height:1.7;text-align:center;
+}
+.note code{background:#fff;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-family:var(--mono);}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:980px){
+  .workspace{grid-template-columns:1fr;}
+  .top-actions{width:100%;}
+}
+@media (max-width:560px){
+  body{padding:10px 10px 32px;}
+  .controls{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
+  .btn{padding:9px 11px;font-size:12.5px;}
+  .logo{font-size:17px;}
+  .row2,.row3{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">RepoCard · 仓库分享卡生成器</div>
+      <div class="tag">把 GitHub 仓库变成一张体面的分享图 · 手动填写、本地渲染，不请求 GitHub API</div>
+    </div>
+    <div class="top-actions">
+      <div class="seg" id="scaleSeg" title="导出倍率">
+        <button data-scale="1">1x</button>
+        <button data-scale="2" class="on">2x</button>
+        <button data-scale="3">3x</button>
+      </div>
+      <button class="btn primary" id="btnExport">导出 PNG</button>
+      <button class="btn" id="btnCopy">复制图片</button>
+      <button class="btn ghost" id="btnShare">分享链接</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- 左侧：仓库信息表单 -->
+    <section class="pane">
+      <div class="pane-head">
+        <span class="ph-title">仓库信息</span>
+        <span class="chip">手动填写</span>
+        <span class="spacer"></span>
+        <span class="ph-hint">不请求 GitHub API</span>
+      </div>
+      <div class="form" id="form">
+        <div class="fg">
+          <div class="fg-label">仓库地址 <span class="hint">拥有者 / 仓库名，均为必填</span></div>
+          <div class="row2">
+            <input type="text" id="inpOwner" placeholder="拥有者，如 oknoo" spellcheck="false" autocomplete="off">
+            <input type="text" id="inpName" placeholder="仓库名，如 1024" spellcheck="false" autocomplete="off">
+          </div>
+        </div>
+        <div class="fg">
+          <div class="fg-label">简介 <span class="hint">横卡最多 2 行、方卡最多 3 行，超出自动省略</span></div>
+          <textarea id="inpDesc" rows="3" placeholder="一句话介绍这个仓库"></textarea>
+        </div>
+        <div class="fg">
+          <div class="fg-label">数据</div>
+          <div class="row3">
+            <input type="number" id="inpStars" min="0" step="1" placeholder="星标">
+            <input type="number" id="inpForks" min="0" step="1" placeholder="Fork">
+            <input type="number" id="inpWatch" min="0" step="1" placeholder="关注">
+          </div>
+        </div>
+        <div class="fg">
+          <div class="fg-label">主语言</div>
+          <select id="selLang"></select>
+        </div>
+        <div class="fg">
+          <div class="fg-label">语言占比 <span class="hint">选填，如 CSS 34.6, HTML 12.8</span></div>
+          <input type="text" id="inpLangs" placeholder="名称 百分比，逗号分隔" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="fg">
+          <div class="fg-label">标签 <span class="hint">逗号或空格分隔，渲染时自动加 #</span></div>
+          <input type="text" id="inpTopics" placeholder="canvas, 单文件, 零依赖" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="fg">
+          <div class="fg-label">主页与许可证 <span class="hint">均为选填</span></div>
+          <div class="row2">
+            <input type="text" id="inpHome" placeholder="主页链接" spellcheck="false" autocomplete="off">
+            <input type="text" id="inpLicense" placeholder="许可证，如 MIT" spellcheck="false" autocomplete="off">
+          </div>
+        </div>
+        <div class="fg">
+          <div class="fg-label">二维码内容 <span class="hint">固定编码仓库地址，扫码直达</span></div>
+          <div class="linkbox" id="qrPreview">github.com/</div>
+        </div>
+      </div>
+      <div class="pane-foot">
+        <button class="btn mini" id="btnSample">示例</button>
+        <button class="btn mini" id="btnClear">清空</button>
+        <span class="tip">Ctrl / ⌘ + S 导出 · Ctrl / ⌘ + Enter 复制</span>
+      </div>
+    </section>
+
+    <!-- 右侧：卡片预览 -->
+    <section class="pane">
+      <div class="pane-head">
+        <span class="ph-title">预览</span>
+        <span class="spacer"></span>
+        <span class="ph-hint" id="sizeHint"></span>
+      </div>
+      <div class="stage" id="stage">
+        <canvas id="preview"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <!-- 控制面板 -->
+  <section class="controls">
+    <div class="ctl">
+      <div class="ctl-label">主题 <span class="ph-hint" id="themeName"></span></div>
+      <div class="swatches" id="themeSw"></div>
+    </div>
+    <div class="ctl">
+      <div class="ctl-label">画布比例</div>
+      <div class="seg full" id="propSeg"></div>
+    </div>
+    <div class="ctl">
+      <div class="ctl-label">二维码 <span class="ph-hint">手写编码器</span></div>
+      <div class="ctl-note">字节模式 · 纠错级 M · 版本 1–10 自动选择，最长约 210 字节；矩阵在本地逐模块绘制。</div>
+    </div>
+  </section>
+
+  <p class="note">
+    快捷键：<code>Ctrl / ⌘ + S</code> 导出 PNG · <code>Ctrl / ⌘ + Enter</code> 复制图片到剪贴板 ·
+    「分享链接」会把当前填写内容编码进地址栏，打开即可还原；本工具不请求 GitHub API。
+  </p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   1. QR 编码器（byte 模式，纠错级 M，版本 1-10）
+   GF(256) 本原多项式 0x11D；格式信息 BCH(15,5) 生成 0x537，掩码 0x5412；
+   版本信息 BCH(18,6) 生成 0x1F25。
+   块结构表来源：gemdocs qrcode gem 与 dev.to/maxart2501，两源交叉一致。
+   ============================================================ */
+
+/* ---- GF(256) ---- */
+const GF_EXP = new Uint8Array(512);
+const GF_LOG = new Uint8Array(256);
+(function () {
+  let x = 1;
+  for (let i = 0; i < 255; i++) {
+    GF_EXP[i] = x; GF_LOG[x] = i;
+    x <<= 1;
+    if (x & 0x100) x ^= 0x11D;
+  }
+  for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+})();
+function gfMul(a, b) { return (a === 0 || b === 0) ? 0 : GF_EXP[GF_LOG[a] + GF_LOG[b]]; }
+
+/* ---- Reed-Solomon ---- */
+function rsDivisor(degree) {
+  const r = new Array(degree).fill(0);
+  r[degree - 1] = 1;
+  let root = 1;
+  for (let i = 0; i < degree; i++) {
+    for (let j = 0; j < degree; j++) {
+      r[j] = gfMul(r[j], root);
+      if (j + 1 < degree) r[j] ^= r[j + 1];
+    }
+    root = gfMul(root, 0x02);
+  }
+  return r;
+}
+function rsRemainder(data, divisor) {
+  const res = new Array(divisor.length).fill(0);
+  for (let k = 0; k < data.length; k++) {
+    const factor = data[k] ^ res.shift();
+    res.push(0);
+    for (let i = 0; i < divisor.length; i++) res[i] ^= gfMul(divisor[i], factor);
+  }
+  return res;
+}
+
+/* ---- 块结构（纠错级 M）：[组1块数, 组1每块数据码字, 组2块数, 组2每块数据码字, 每块纠错码字] ---- */
+const QR_BLOCKS_M = {
+  1: [1, 16, 0, 0, 10],
+  2: [1, 28, 0, 0, 16],
+  3: [1, 44, 0, 0, 26],
+  4: [2, 32, 0, 0, 18],
+  5: [2, 43, 0, 0, 24],
+  6: [4, 27, 0, 0, 16],
+  7: [4, 31, 0, 0, 18],
+  8: [2, 38, 2, 39, 22],
+  9: [3, 36, 2, 37, 22],
+  10: [4, 43, 1, 44, 26]
+};
+/** 该版本可容纳的字节数（byte 模式） */
+function qrByteCapacity(version) {
+  const b = QR_BLOCKS_M[version];
+  const total = b[0] * b[1] + b[2] * b[3];
+  return total - (version <= 9 ? 2 : 3);
+}
+/** 该版本总码字数（数据 + 纠错） */
+function qrTotalCodewords(version) {
+  const b = QR_BLOCKS_M[version];
+  const blocks = b[0] + b[2];
+  const data = b[0] * b[1] + b[2] * b[3];
+  return data + blocks * b[4];
+}
+
+/* ---- 位流 ---- */
+function pushBits(arr, value, length) {
+  for (let i = length - 1; i >= 0; i--) arr.push((value >>> i) & 1);
+}
+function bitsToBytes(bits) {
+  const out = new Array(bits.length / 8).fill(0);
+  for (let i = 0; i < out.length; i++)
+    for (let j = 0; j < 8; j++) out[i] |= bits[i * 8 + j] << (7 - j);
+  return out;
+}
+
+/* ---- 分段 + 分块交织 ---- */
+function buildCodewords(bytes, version) {
+  const spec = QR_BLOCKS_M[version];
+  const nb1 = spec[0], db1 = spec[1], nb2 = spec[2], db2 = spec[3], eccLen = spec[4];
+
+  const bb = [];
+  pushBits(bb, 0x4, 4);                                   // byte 模式
+  pushBits(bb, bytes.length, version <= 9 ? 8 : 16);
+  for (const b of bytes) pushBits(bb, b, 8);
+
+  const capBits = (nb1 * db1 + nb2 * db2) * 8;
+  pushBits(bb, 0, Math.min(4, capBits - bb.length));      // 终止符
+  pushBits(bb, 0, (8 - bb.length % 8) % 8);               // 对齐到字节
+  for (let pad = 0xEC; bb.length < capBits; pad ^= 0xEC ^ 0x11) pushBits(bb, pad, 8);
+
+  const data = bitsToBytes(bb);
+  const blocks = [];
+  let p = 0;
+  for (let i = 0; i < nb1; i++) { blocks.push(data.slice(p, p + db1)); p += db1; }
+  for (let i = 0; i < nb2; i++) { blocks.push(data.slice(p, p + db2)); p += db2; }
+
+  const divisor = rsDivisor(eccLen);
+  const eccs = blocks.map(b => rsRemainder(b, divisor));
+
+  const out = [];
+  const maxData = Math.max(db1, db2);
+  for (let i = 0; i < maxData; i++)
+    for (let b = 0; b < blocks.length; b++)
+      if (i < blocks[b].length) out.push(blocks[b][i]);
+  for (let i = 0; i < eccLen; i++)
+    for (let b = 0; b < eccs.length; b++) out.push(eccs[b][i]);
+  return out;
+}
+
+/* ---- 定位图形中心坐标 / 校正图形坐标 ---- */
+function alignPositions(version) {
+  if (version === 1) return [];
+  const size = version * 4 + 17;
+  const num = Math.floor(version / 7) + 2;
+  const step = (version === 32) ? 26
+    : Math.ceil((version * 4 + 4) / (num * 2 - 2)) * 2;
+  const res = [6];
+  for (let pos = size - 7; res.length < num; pos -= step) res.splice(1, 0, pos);
+  return res;
+}
+
+/* ---- BCH 信息位 ---- */
+function formatBits(mask) {                 // 纠错级 M = 00
+  const data = mask;                        // 5 位：ECC(2) + mask(3)
+  let rem = data;
+  for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+  return ((data << 10) | (rem & 0x3FF)) ^ 0x5412;
+}
+function versionBits(version) {
+  let rem = version;
+  for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25);
+  return (version << 12) | (rem & 0xFFF);
+}
+
+/* ---- 掩码 ---- */
+const MASK_FNS = [
+  (x, y) => (x + y) % 2 === 0,
+  (x, y) => x % 2 === 0,
+  (x, y) => y % 3 === 0,
+  (x, y) => (x + y) % 3 === 0,
+  (x, y) => (Math.floor(x / 2) + Math.floor(y / 3)) % 2 === 0,
+  (x, y) => (x * y) % 2 === 0 && (x * y) % 3 === 0,
+  (x, y) => ((x * y) % 2 + (x * y) % 3) % 2 === 0,
+  (x, y) => ((x + y) % 2 + (x * y) % 3) % 2 === 0
+];
+
+/* ---- 矩阵 ---- */
+function buildQrMatrix(bytes, version, mask) {
+  const size = version * 4 + 17;
+  const mod = [], fn = [];
+  for (let i = 0; i < size; i++) { mod.push(new Array(size).fill(false)); fn.push(new Array(size).fill(false)); }
+  const setFn = (x, y, dark) => { mod[y][x] = dark; fn[y][x] = true; };
+
+  // 定时图形先画，之后定位图形会覆盖它（定位图形优先）
+  for (let i = 0; i < size; i++) { setFn(6, i, i % 2 === 0); setFn(i, 6, i % 2 === 0); }
+
+  // 三个定位图形（含 dist=4 的分隔符）
+  for (const [cx, cy] of [[3, 3], [size - 4, 3], [3, size - 4]]) {
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || x >= size || y < 0 || y >= size) continue;
+      const d = Math.max(Math.abs(dx), Math.abs(dy));
+      setFn(x, y, d !== 2 && d !== 4);
+    }
+  }
+
+  // 校正图形（跳过与定位图形重合的三个角）
+  const ap = alignPositions(version);
+  const n = ap.length;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    if ((i === 0 && j === 0) || (i === 0 && j === n - 1) || (i === n - 1 && j === 0)) continue;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++)
+      setFn(ap[i] + dx, ap[j] + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+  }
+
+  // 预留格式信息区（两份）
+  for (let i = 0; i < 6; i++) setFn(8, i, false);
+  setFn(8, 7, false); setFn(8, 8, false); setFn(7, 8, false);
+  for (let i = 9; i < 15; i++) setFn(14 - i, 8, false);
+  for (let i = 0; i < 8; i++) setFn(size - 1 - i, 8, false);
+  for (let i = 8; i < 15; i++) setFn(8, size - 15 + i, false);
+  setFn(8, size - 8, true);                       // 暗模块
+
+  // 预留版本信息区（版本 ≥ 7）
+  if (version >= 7) {
+    for (let i = 0; i < 18; i++) {
+      const a = size - 11 + (i % 3), b = Math.floor(i / 3);
+      setFn(a, b, false); setFn(b, a, false);
+    }
+  }
+
+  // 数据之字形放置
+  const codewords = buildCodewords(bytes, version);
+  let bitIdx = 0;
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let vert = 0; vert < size; vert++) {
+      for (let j = 0; j < 2; j++) {
+        const x = right - j;
+        const upward = ((right + 1) & 2) === 0;
+        const y = upward ? size - 1 - vert : vert;
+        if (!fn[y][x] && bitIdx < codewords.length * 8) {
+          mod[y][x] = ((codewords[bitIdx >>> 3] >>> (7 - (bitIdx & 7))) & 1) === 1;
+          bitIdx++;
+        }
+      }
+    }
+  }
+
+  // 应用掩码
+  const maskFn = MASK_FNS[mask];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++)
+    if (!fn[y][x] && maskFn(x, y)) mod[y][x] = !mod[y][x];
+
+  // 写入格式信息
+  const fb = formatBits(mask);
+  const bit = i => ((fb >>> i) & 1) === 1;
+  for (let i = 0; i < 6; i++) mod[i][8] = bit(i);
+  mod[7][8] = bit(6); mod[8][8] = bit(7); mod[8][7] = bit(8);
+  for (let i = 9; i < 15; i++) mod[8][14 - i] = bit(i);
+  for (let i = 0; i < 8; i++) mod[8][size - 1 - i] = bit(i);
+  for (let i = 8; i < 15; i++) mod[size - 15 + i][8] = bit(i);
+
+  // 写入版本信息
+  if (version >= 7) {
+    const vb = versionBits(version);
+    for (let i = 0; i < 18; i++) {
+      const b = ((vb >>> i) & 1) === 1;
+      const a = size - 11 + (i % 3), c = Math.floor(i / 3);
+      mod[c][a] = b; mod[a][c] = b;
+    }
+  }
+  return { size, modules: mod, isFunction: fn };
+}
+
+/* ---- 掩码罚分 ---- */
+const PENALTY = { N1: 3, N2: 3, N3: 40, N4: 10 };
+function finderAddHistory(run, hist, size) {
+  if (hist[0] === 0) run += size;
+  hist.pop(); hist.unshift(run);
+}
+function finderCountPatterns(hist) {
+  const n = hist[1];
+  const core = n > 0 && hist[2] === n && hist[3] === n * 3 && hist[4] === n && hist[5] === n;
+  return (core && hist[0] >= n * 4 && hist[6] >= n ? 1 : 0)
+       + (core && hist[6] >= n * 4 && hist[0] >= n ? 1 : 0);
+}
+function penaltyScore(modules, size) {
+  let result = 0;
+  const N1 = PENALTY.N1, N3 = PENALTY.N3, N2 = PENALTY.N2, N4 = PENALTY.N4;
+
+  for (let y = 0; y < size; y++) {                       // 行
+    let runColor = false, runX = 0;
+    const hist = [0, 0, 0, 0, 0, 0, 0];
+    for (let x = 0; x < size; x++) {
+      if (modules[y][x] === runColor) {
+        runX++;
+        if (runX === 5) result += N1; else if (runX > 5) result++;
+      } else {
+        finderAddHistory(runX, hist, size);
+        if (!runColor) result += finderCountPatterns(hist) * N3;
+        runColor = modules[y][x]; runX = 1;
+      }
+    }
+    if (runColor) { finderAddHistory(runX, hist, size); runX = 0; }
+    runX += size; finderAddHistory(runX, hist, size);
+    result += finderCountPatterns(hist) * N3;
+  }
+  for (let x = 0; x < size; x++) {                       // 列
+    let runColor = false, runY = 0;
+    const hist = [0, 0, 0, 0, 0, 0, 0];
+    for (let y = 0; y < size; y++) {
+      if (modules[y][x] === runColor) {
+        runY++;
+        if (runY === 5) result += N1; else if (runY > 5) result++;
+      } else {
+        finderAddHistory(runY, hist, size);
+        if (!runColor) result += finderCountPatterns(hist) * N3;
+        runColor = modules[y][x]; runY = 1;
+      }
+    }
+    if (runColor) { finderAddHistory(runY, hist, size); runY = 0; }
+    runY += size; finderAddHistory(runY, hist, size);
+    result += finderCountPatterns(hist) * N3;
+  }
+  for (let y = 0; y < size - 1; y++)                     // 2×2 同色块
+    for (let x = 0; x < size - 1; x++) {
+      const c = modules[y][x];
+      if (c === modules[y][x + 1] && c === modules[y + 1][x] && c === modules[y + 1][x + 1]) result += N2;
+    }
+  let dark = 0;                                          // 明暗均衡
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (modules[y][x]) dark++;
+  const total = size * size;
+  const k = Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1;
+  return result + k * N4;
+}
+
+/* ---- 对外入口 ---- */
+function utf8Bytes(text) {
+  const out = [];
+  for (const ch of text) {
+    const c = ch.codePointAt(0);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) { out.push(0xC0 | (c >> 6), 0x80 | (c & 0x3F)); }
+    else if (c < 0x10000) { out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F)); }
+    else { out.push(0xF0 | (c >> 18), 0x80 | ((c >> 12) & 0x3F), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F)); }
+  }
+  return out;
+}
+/**
+ * 生成 QR 矩阵。
+ * @returns {{size:number, modules:boolean[][]}} modules[y][x]
+ */
+function qrEncode(text) {
+  const bytes = utf8Bytes(text);
+  let version = 0;
+  for (let v = 1; v <= 10; v++) if (bytes.length <= qrByteCapacity(v)) { version = v; break; }
+  if (!version) throw new Error("内容过长，QR 最大支持 " + qrByteCapacity(10) + " 字节");
+  let best = null, bestScore = Infinity;
+  for (let m = 0; m < 8; m++) {
+    const q = buildQrMatrix(bytes, version, m);
+    const s = penaltyScore(q.modules, q.size);
+    if (s < bestScore) { bestScore = s; best = q; }
+  }
+  return best;
+}
+
+/* ============================================================
+   2. 主题 / 画布比例 / 语言色
+   ============================================================ */
+const THEMES = {
+  cream: {
+    name: "奶霜", dark: false,
+    bg: "#FBF6EC",
+    ink: "#33291E", ink2: "#6B5F4E", muted: "#A69884",
+    line: "rgba(51,41,30,0.12)", track: "rgba(51,41,30,0.08)",
+    accent: "#E8722A", accentSoft: "rgba(232,114,42,0.13)",
+    decoA: ["rgba(232,114,42,0.11)", "rgba(232,114,42,0)"],
+    decoB: ["rgba(96,140,120,0.09)", "rgba(96,140,120,0)"],
+    qrFront: "#33291E", qrBack: "#FFFFFF"
+  },
+  mint: {
+    name: "薄荷", dark: false,
+    bg: "#EFF9F4",
+    ink: "#16352B", ink2: "#4C6E60", muted: "#87A79A",
+    line: "rgba(22,53,43,0.12)", track: "rgba(22,53,43,0.08)",
+    accent: "#0FA97F", accentSoft: "rgba(15,169,127,0.13)",
+    decoA: ["rgba(15,169,127,0.13)", "rgba(15,169,127,0)"],
+    decoB: ["rgba(64,150,255,0.08)", "rgba(64,150,255,0)"],
+    qrFront: "#16352B", qrBack: "#FFFFFF"
+  },
+  sky: {
+    name: "晴空", dark: false,
+    bg: "#EEF5FF",
+    ink: "#1A2A3B", ink2: "#4F6479", muted: "#8A9EB2",
+    line: "rgba(26,42,59,0.12)", track: "rgba(26,42,59,0.08)",
+    accent: "#2E7FE8", accentSoft: "rgba(46,127,232,0.12)",
+    decoA: ["rgba(46,127,232,0.13)", "rgba(46,127,232,0)"],
+    decoB: ["rgba(124,92,226,0.08)", "rgba(124,92,226,0)"],
+    qrFront: "#1A2A3B", qrBack: "#FFFFFF"
+  },
+  sakura: {
+    name: "樱雪", dark: false,
+    bg: "#FFF3F6",
+    ink: "#3C2130", ink2: "#785166", muted: "#AE8A9A",
+    line: "rgba(60,33,48,0.12)", track: "rgba(60,33,48,0.08)",
+    accent: "#E8437E", accentSoft: "rgba(232,67,126,0.12)",
+    decoA: ["rgba(232,67,126,0.12)", "rgba(232,67,126,0)"],
+    decoB: ["rgba(255,176,92,0.09)", "rgba(255,176,92,0)"],
+    qrFront: "#3C2130", qrBack: "#FFFFFF"
+  },
+  carbon: {
+    name: "墨碳", dark: true,
+    bg: "#17181C",
+    ink: "#EDEFF4", ink2: "#A6ACB8", muted: "#6C7280",
+    line: "rgba(255,255,255,0.14)", track: "rgba(255,255,255,0.12)",
+    accent: "#8B93F8", accentSoft: "rgba(139,147,248,0.17)",
+    decoA: ["rgba(139,147,248,0.17)", "rgba(139,147,248,0)"],
+    decoB: ["rgba(232,67,126,0.08)", "rgba(232,67,126,0)"],
+    qrFront: "#17181C", qrBack: "#FFFFFF"
+  },
+  deep: {
+    name: "深海", dark: true,
+    bg: "#0C2027",
+    ink: "#E4F1F4", ink2: "#9CBCC4", muted: "#5D818B",
+    line: "rgba(255,255,255,0.14)", track: "rgba(255,255,255,0.12)",
+    accent: "#3AC6D8", accentSoft: "rgba(58,198,216,0.16)",
+    decoA: ["rgba(58,198,216,0.16)", "rgba(58,198,216,0)"],
+    decoB: ["rgba(72,112,255,0.10)", "rgba(72,112,255,0)"],
+    qrFront: "#0C2027", qrBack: "#FFFFFF"
+  }
+};
+
+const PROPS = {
+  og: {
+    name: "横卡 1200 × 630", W: 1200, H: 630, P: 56,
+    avatar: 88, ownerSize: 28, nameSize: 58, nameMin: 38,
+    descSize: 28, descLH: 40, descMax: 2,
+    statSize: 26, statGap: 46, legendSize: 22,
+    topicSize: 22, topicMax: 2, qr: 120, linkSize: 24,
+    gapMin: 6, gapMax: 64
+  },
+  sq: {
+    name: "方卡 1080 × 1080", W: 1080, H: 1080, P: 72,
+    avatar: 104, ownerSize: 32, nameSize: 68, nameMin: 44,
+    descSize: 30, descLH: 48, descMax: 3,
+    statSize: 28, statGap: 52, legendSize: 24,
+    topicSize: 24, topicMax: 3, qr: 220, linkSize: 26,
+    gapMin: 8, gapMax: 76
+  }
+};
+
+/* GitHub Linguist 常用语言色（查表命中忽略大小写，未命中回退灰） */
+const LANG_COLORS = {
+  "JavaScript": "#f1e05a", "TypeScript": "#3178c6", "Python": "#3572A5", "Java": "#b07219",
+  "Go": "#00ADD8", "Rust": "#dea584", "C": "#555555", "C++": "#f34b7d", "C#": "#178600",
+  "PHP": "#4F5D95", "Ruby": "#701516", "Swift": "#F05138", "Kotlin": "#A97BFF", "Dart": "#00B4AB",
+  "HTML": "#e34c26", "CSS": "#563d7c", "SCSS": "#c6538c", "Sass": "#a53b70", "Less": "#1d365d",
+  "Vue": "#41b883", "Svelte": "#ff3e00", "Shell": "#89e051", "Lua": "#000080", "Zig": "#ec915c",
+  "Haskell": "#5e5086", "Scala": "#c22d40", "Perl": "#0298c3", "R": "#198CE7",
+  "Objective-C": "#438eff", "Elixir": "#6e4a7e", "Clojure": "#db5855", "Julia": "#a270ba",
+  "MATLAB": "#e16737", "Fortran": "#4d41b1", "Assembly": "#6E4C13", "Markdown": "#083fa1",
+  "Jupyter Notebook": "#DA5B0B", "Solidity": "#AA674C", "Makefile": "#427819",
+  "Dockerfile": "#384d54", "PowerShell": "#012456", "Batchfile": "#C1F12E", "Groovy": "#4298b8",
+  "OCaml": "#ef7a08", "Erlang": "#B83998", "Nim": "#ffc200", "Crystal": "#000100",
+  "Stylus": "#ff6347", "CoffeeScript": "#244776", "Elm": "#60B5CC", "PureScript": "#1D222D",
+  "Reason": "#ff5847", "F#": "#b845fc", "Pascal": "#E3F171", "SQL": "#e38c00",
+  "YAML": "#cb171e", "TOML": "#9c4221", "TeX": "#3D6117", "Nix": "#7e7eff",
+  "GDScript": "#355570", "Verilog": "#b2b7f8", "VHDL": "#adb2cb", "SystemVerilog": "#DAE1C2",
+  "JSON": "#8a6d3b"
+};
+
+/* ============================================================
+   3. 基础工具
+   ============================================================ */
+const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+const MONO = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
+const measCtx = document.createElement("canvas").getContext("2d");
+
+function fontCtx(ctx, size, weight, mono) {
+  ctx.font = (weight || "400") + " " + size + "px " + (mono ? MONO : SANS);
+}
+
+function rr(ctx, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function blob(ctx, cx, cy, r, stops, w, h) {
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, stops[0]);
+  g.addColorStop(1, stops[1]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function hexA(hex, a) {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map(c => c + c).join("") : h, 16);
+  return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+}
+
+/** GitHub 式数字缩写：999 / 1.2k / 12k / 1.5M */
+function fmtNum(n) {
+  n = Math.max(0, Math.floor(Number(n) || 0));
+  if (n < 1000) return String(n);
+  if (n < 10000) return String(Math.round(n / 100) / 10).replace(/\.0$/, "") + "k";
+  if (n < 1e6) return Math.round(n / 1000) + "k";
+  return String(Math.round(n / 1e5) / 10).replace(/\.0$/, "") + "M";
+}
+
+/** 从任意形式的链接里取主机名 */
+function hostOf(url) {
+  const s = String(url || "").trim();
+  if (!s) return "";
+  const m = s.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/);
+  let host = m ? m[1] : s.split(/[?#]/)[0].replace(/\/.*$/, "");
+  return host.replace(/^www\./, "") || s;
+}
+
+const CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF5E\u3000-\u303F]/;
+/** 中英混排折行：CJK 单字可断，拉丁按词断（超长词强制逐字断） */
+function wrapText(ctx, text, maxW, maxLines) {
+  const src = String(text || "").replace(/\r\n?/g, "\n");
+  const lines = [];
+  for (const para of src.split("\n")) {
+    let line = "";
+    let i = 0;
+    const n = para.length;
+    while (i < n) {
+      const ch = para[i];
+      if (ch === " " || ch === "\t") {
+        if (line) line += ch;
+        i++;
+        continue;
+      }
+      let unit;
+      if (CJK_RE.test(ch)) { unit = ch; i++; }
+      else {
+        let j = i;
+        while (j < n && para[j] !== " " && para[j] !== "\t" && !CJK_RE.test(para[j])) j++;
+        unit = para.slice(i, j);
+        i = j;
+      }
+      if (!line) { line = unit; continue; }
+      if (ctx.measureText(line + unit).width <= maxW) { line += unit; continue; }
+      lines.push(line.replace(/[ \t]+$/, ""));
+      line = unit;
+    }
+    if (line) lines.push(line.replace(/[ \t]+$/, ""));
+  }
+  if (!lines.length) lines.push("");
+  if (maxLines && lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    let last = kept[maxLines - 1];
+    while (last.length > 1 && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
+    kept[maxLines - 1] = last.replace(/[ ,，、;；]+$/, "") + "…";
+    return kept;
+  }
+  return lines;
+}
+
+/** 超宽文本截断加省略号（调用前需设好 ctx.font） */
+function ellipsize(ctx, text, maxW) {
+  const s = String(text || "");
+  if (ctx.measureText(s).width <= maxW) return s;
+  let t = s;
+  while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  return t.replace(/[\s.\-_/]+$/, "") + "…";
+}
+
+/** 解析「名称 百分比」列表 */
+function parseLangs(main, extra) {
+  const out = [];
+  const push = (name, pct) => {
+    name = String(name || "").trim().replace(/\s+/g, " ");
+    if (!name) return;
+    out.push({ name: name, pct: (isFinite(pct) && pct > 0) ? pct : null });
+  };
+  String(extra || "").split(/[,，;；\n]+/).forEach(part => {
+    const p = part.trim();
+    if (!p) return;
+    const m = p.match(/^(.+?)[\s:：]+(\d+(?:\.\d+)?)\s*%?$/);
+    if (m) push(m[1], parseFloat(m[2])); else push(p, null);
+  });
+  const mn = String(main || "").trim();
+  if (mn && !out.some(l => l.name.toLowerCase() === mn.toLowerCase())) out.unshift({ name: mn, pct: null });
+  return out;
+}
+
+/** 归一化为占比段（无百分比时等分；超过 5 段合并为「其他」） */
+function normalizeLangs(langs) {
+  if (!langs.length) return [];
+  let list;
+  if (langs.length === 1) {
+    list = [{ name: langs[0].name, pct: 100 }];
+  } else if (langs.every(l => l.pct !== null)) {
+    const sum = langs.reduce((a, b) => a + b.pct, 0);
+    list = langs.map(l => ({ name: l.name, pct: sum > 0 ? l.pct / sum * 100 : 100 / langs.length }));
+  } else {
+    const each = 100 / langs.length;
+    list = langs.map((l, i) => ({ name: l.name, pct: i === langs.length - 1 ? 100 - each * (langs.length - 1) : each }));
+  }
+  if (list.length > 5) {
+    const head = list.slice(0, 4);
+    head.push({ name: "其他", pct: list.slice(4).reduce((a, b) => a + b.pct, 0) });
+    list = head;
+  }
+  return list.map(l => ({
+    name: l.name,
+    pct: Math.round(l.pct * 10) / 10,
+    color: l.name === "其他" ? "#9AA3AD" : langColor(l.name)
+  }));
+}
+
+function langColor(name) {
+  const key = String(name || "");
+  const hit = Object.keys(LANG_COLORS).find(k => k.toLowerCase() === key.toLowerCase());
+  return hit ? LANG_COLORS[hit] : "#9AA3AD";
+}
+
+/** 解析标签：逗号 / 分号 / 空白 / # 分隔 */
+function parseTopics(str) {
+  return String(str || "")
+    .split(/[,，;；\s#]+/)
+    .map(t => t.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+/* ============================================================
+   4. 布局计算（逻辑尺寸 → 块流式排布，剩余空间自动居中分配）
+   ============================================================ */
+function computeLayout(st) {
+  const T = THEMES[st.theme];
+  const PR = PROPS[st.prop];
+  const W = PR.W, H = PR.H, P = PR.P;
+  const ctx = measCtx;
+
+  const owner = String(st.owner || "").trim() || "owner";
+  const name = String(st.name || "").trim() || "未命名";
+  const letter = (owner[0] || "?").toUpperCase();
+
+  const textX = P + PR.avatar + 26;
+  const nameCap = W - P - textX;
+
+  // 仓库名字号自适应（超宽逐级缩小，仍超宽则省略）
+  let nameSize = PR.nameSize;
+  fontCtx(ctx, nameSize, "800");
+  while (nameSize > PR.nameMin && ctx.measureText(name).width > nameCap) {
+    nameSize -= 2;
+    fontCtx(ctx, nameSize, "800");
+  }
+  const nameText = ellipsize(ctx, name, nameCap);
+
+  fontCtx(ctx, PR.ownerSize, "600");
+  const ownerText = ellipsize(ctx, owner, nameCap);
+
+  // 简介（先按无限行折行，再按比例截取）
+  const descSrc = String(st.desc || "").trim();
+  fontCtx(ctx, PR.descSize, "400");
+  const descAll = descSrc ? wrapText(ctx, descSrc, W - P * 2, 99) : [];
+
+  // 统计行
+  const home = hostOf(st.homepage);
+  const lic = String(st.license || "").trim();
+  const statItems = [
+    { icon: "star", text: fmtNum(st.stars) },
+    { icon: "fork", text: fmtNum(st.forks) },
+    { icon: "eye", text: fmtNum(st.watchers) }
+  ];
+  if (lic) statItems.push({ icon: "law", text: lic.slice(0, 20) });
+  if (home) {
+    fontCtx(ctx, PR.statSize, "600");
+    statItems.push({ icon: "globe", text: ellipsize(ctx, home, 170) });
+  }
+
+  // 语言段与标签
+  const segs = normalizeLangs(parseLangs(st.lang, st.langs));
+  const topics = parseTopics(st.topics);
+
+  // 底部：链接 + 二维码
+  const qrSize = PR.qr;
+  const footerH = qrSize + 26;
+  const qrTop = H - P - footerH;
+  const qrLeft = W - P - qrSize;
+  const flowBottom = qrTop - 14;
+
+  const hasRepo = !!(String(st.owner || "").trim() && String(st.name || "").trim());
+  const qrUrl = hasRepo ? "https://github.com/" + String(st.owner).trim() + "/" + String(st.name).trim() : "";
+  let qrMatrix = null;
+  if (qrUrl) {
+    try { qrMatrix = qrGet(qrUrl); } catch (e) { qrMatrix = null; }
+  }
+
+  // 各块高度
+  const headerH = PR.ownerSize + 14 + nameSize + 14;
+  const statH = PR.statSize + 10;
+  const barH = segs.length ? (12 + 6 + PR.legendSize + 6) : 0;
+
+  // 标签药丸度量
+  fontCtx(ctx, PR.topicSize, "600");
+  const pillH = PR.topicSize + 14;
+  const pillGap = 10;
+  const areaW = W - P * 2;
+  const topicRowsOf = (maxRows) => {
+    const rows = [];
+    let cur = [], curW = 0;
+    for (const t of topics) {
+      const w = ctx.measureText(t).width + 28;
+      if (cur.length && curW + pillGap + w > areaW) { rows.push(cur); cur = []; curW = 0; }
+      cur.push({ text: t, w: w });
+      curW += (cur.length > 1 ? pillGap : 0) + w;
+      if (rows.length >= maxRows) break;
+    }
+    if (cur.length && rows.length < maxRows) rows.push(cur);
+    return rows;
+  };
+
+  // 块流：行高固定，间距在 [gapMin, gapMax] 内自适应，剩余空间整体居中
+  const buildPass = (topicMax) => {
+    const dLines = descAll.slice(0, PR.descMax);
+    const dH = dLines.length ? dLines.length * PR.descLH : 0;
+    const tRows = topics.length ? topicRowsOf(topicMax) : [];
+    const tH = tRows.length ? tRows.length * pillH + (tRows.length - 1) * pillGap : 0;
+    const blocks = [headerH, dH, statH, barH, tH].filter(h => h > 0);
+    const n = blocks.length;
+    const sum = blocks.reduce((a, b) => a + b, 0);
+    const avail = Math.max(0, flowBottom - P);
+    const raw = n > 1 ? (avail - sum) / (n - 1) : 0;
+    const gap = Math.max(PR.gapMin, Math.min(PR.gapMax, raw));
+    const leftover = avail - sum - gap * (n - 1);
+    const startY = P + Math.max(0, leftover) / 2;
+    return { dLines: dLines, tRows: tRows, blocks: blocks, gap: gap, startY: startY };
+  };
+
+  let lp = buildPass(PR.topicMax);
+  if (lp.gap === PR.gapMin) {           // 触底：先收标签行数，再收间距
+    const c = buildPass(1);
+    if (c.blocks.length < lp.blocks.length || c.gap > lp.gap) lp = c;
+  }
+
+  // 由块序列推导各元素 Y
+  const kinds = [];
+  if (headerH > 0) kinds.push("header");
+  if (lp.dLines.length) kinds.push("desc");
+  kinds.push("stats");
+  if (barH > 0) kinds.push("bar");
+  if (lp.tRows.length) kinds.push("topics");
+  const pos = {};
+  let cy = lp.startY;
+  kinds.forEach((k, i) => { pos[k] = cy; cy += lp.blocks[i] + lp.gap; });
+
+  // 统计行宽度自适应（放不下则从尾部丢弃）
+  fontCtx(ctx, PR.statSize, "600");
+  const iconS = 22;
+  const fitted = [];
+  let sx = 0;
+  for (const it of statItems) {
+    const iw = iconS + 9 + ctx.measureText(it.text).width;
+    if (fitted.length && sx + PR.statGap + iw > areaW) break;
+    fitted.push(it);
+    sx += (fitted.length > 1 ? PR.statGap : 0) + iw;
+  }
+
+  // 语言图例（放不下则丢弃尾部条目）
+  fontCtx(ctx, PR.legendSize, "500");
+  const legend = [];
+  let lx = 0;
+  for (const s of segs) {
+    const nameW = ctx.measureText(s.name).width;
+    const pctW = ctx.measureText(s.pct + "%").width;
+    const itemW = 22 + nameW + 10 + pctW + 10 + 16;
+    if (legend.length && lx + itemW > areaW) break;
+    legend.push({ color: s.color, name: s.name, pct: s.pct });
+    lx += itemW;
+  }
+
+  // 底部链接
+  fontCtx(ctx, PR.linkSize, "400", true);
+  const linkFull = hasRepo ? "github.com/" + owner + "/" + name : "github.com/owner/repo";
+  const linkText = ellipsize(ctx, linkFull, W - P - qrSize - 48 - 34);
+
+  return {
+    T: T, PR: PR, W: W, H: H, P: P,
+    letter: letter, ownerText: ownerText, nameText: nameText, nameSize: nameSize, textX: textX,
+    headerTop: pos.header,
+    descLines: lp.dLines, descTop: pos.desc,
+    statsTop: pos.stats, statItems: fitted, statGap: PR.statGap,
+    bar: segs.length ? { x: P, y: pos.bar, w: areaW, h: 12, segs: segs } : null,
+    legend: legend, legendTop: pos.bar + 18,
+    topicRows: lp.tRows, topicsTop: pos.topics, pillH: pillH, pillGap: pillGap,
+    qrMatrix: qrMatrix, qrSize: qrSize, qrTop: qrTop, qrLeft: qrLeft,
+    linkText: linkText
+  };
+}
+
+/* ============================================================
+   5. 手写矢量图标（无 emoji、无图标字体）
+   ============================================================ */
+function starIcon(ctx, cx, cy, r, col) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rad = i % 2 === 0 ? r : r * 0.45;
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const px = cx + Math.cos(a) * rad, py = cy + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = col;
+  ctx.fill();
+}
+
+function forkIcon(ctx, x, y, s, col) {
+  ctx.strokeStyle = col;
+  ctx.lineWidth = Math.max(1.5, s * 0.13);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x + s * 0.26, y + s * 0.26); ctx.lineTo(x + s * 0.26, y + s * 0.52);
+  ctx.moveTo(x + s * 0.74, y + s * 0.26); ctx.lineTo(x + s * 0.74, y + s * 0.52);
+  ctx.moveTo(x + s * 0.5, y + s * 0.52); ctx.lineTo(x + s * 0.5, y + s * 0.74);
+  ctx.stroke();
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(x + s * 0.26, y + s * 0.16, s * 0.11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + s * 0.74, y + s * 0.16, s * 0.11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + s * 0.5, y + s * 0.86, s * 0.11, 0, Math.PI * 2); ctx.fill();
+}
+
+function eyeIcon(ctx, x, y, s, col) {
+  ctx.strokeStyle = col;
+  ctx.lineWidth = Math.max(1.4, s * 0.11);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.5);
+  ctx.quadraticCurveTo(x + s * 0.5, y - s * 0.14, x + s, y + s * 0.5);
+  ctx.quadraticCurveTo(x + s * 0.5, y + s * 1.14, x, y + s * 0.5);
+  ctx.stroke();
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(x + s * 0.5, y + s * 0.5, s * 0.15, 0, Math.PI * 2); ctx.fill();
+}
+
+function globeIcon(ctx, x, y, s, col) {
+  const cx = x + s / 2, cy = y + s / 2, r = s / 2;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = Math.max(1.3, s * 0.1);
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(cx, cy, r * 0.45, r, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.stroke();
+}
+
+function lawIcon(ctx, x, y, s, col) {
+  const cx = x + s / 2;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = Math.max(1.4, s * 0.09);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx, y + s * 0.16); ctx.lineTo(cx, y + s * 0.80);
+  ctx.moveTo(x + s * 0.14, y + s * 0.86); ctx.lineTo(x + s * 0.86, y + s * 0.86);
+  ctx.moveTo(x + s * 0.16, y + s * 0.28); ctx.lineTo(x + s * 0.84, y + s * 0.28);
+  ctx.moveTo(x + s * 0.16, y + s * 0.28); ctx.lineTo(x + s * 0.16, y + s * 0.42);
+  ctx.moveTo(x + s * 0.84, y + s * 0.28); ctx.lineTo(x + s * 0.84, y + s * 0.42);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x + s * 0.16, y + s * 0.45, s * 0.13, 0.1 * Math.PI, 0.9 * Math.PI);
+  ctx.arc(x + s * 0.84, y + s * 0.45, s * 0.13, 0.1 * Math.PI, 0.9 * Math.PI);
+  ctx.stroke();
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(cx, y + s * 0.15, s * 0.06, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawStatIcon(ctx, kind, x, y, s, col) {
+  if (kind === "star") starIcon(ctx, x + s / 2, y + s / 2, s * 0.5, col);
+  else if (kind === "fork") forkIcon(ctx, x, y, s, col);
+  else if (kind === "eye") eyeIcon(ctx, x, y, s, col);
+  else if (kind === "globe") globeIcon(ctx, x, y, s, col);
+  else lawIcon(ctx, x, y, s, col);
+}
+
+/* ============================================================
+   6. 绘制
+   ============================================================ */
+const qrCache = new Map();
+function qrGet(text) {
+  let q = qrCache.get(text);
+  if (!q) {
+    q = qrEncode(text);
+    if (qrCache.size > 24) qrCache.clear();
+    qrCache.set(text, q);
+  }
+  return q;
+}
+
+/** 画二维码：白底圆角面板 + 4 模块静默区，模块取整数像素避免半格模糊 */
+function drawQR(ctx, x, y, size, q, front, back, border) {
+  const quiet = 4;
+  const total = q.size + quiet * 2;
+  const cell = Math.max(2, Math.floor(size / total));
+  const dim = cell * total;
+  const ox = x + (size - dim) / 2;
+  const oy = y + (size - dim) / 2;
+  rr(ctx, x, y, size, size, size * 0.16);
+  ctx.fillStyle = back;
+  ctx.fill();
+  if (border) { ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.stroke(); }
+  ctx.fillStyle = front;
+  for (let yy = 0; yy < q.size; yy++)
+    for (let xx = 0; xx < q.size; xx++)
+      if (q.modules[yy][xx]) ctx.fillRect(ox + (xx + quiet) * cell, oy + (yy + quiet) * cell, cell, cell);
+}
+
+function drawHeader(ctx, L) {
+  const T = L.T, PR = L.PR;
+  const avS = PR.avatar;
+  const avY = L.headerTop + (PR.ownerSize + 14 + L.nameSize + 14 - avS) / 2;
+
+  rr(ctx, L.P, avY, avS, avS, avS * 0.28);
+  ctx.fillStyle = T.accentSoft;
+  ctx.fill();
+  ctx.strokeStyle = hexA(T.accent, 0.32);
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  fontCtx(ctx, Math.round(avS * 0.48), "800");
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = T.accent;
+  ctx.fillText(L.letter, L.P + avS / 2, avY + avS / 2 + 1);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+
+  fontCtx(ctx, PR.ownerSize, "600");
+  ctx.fillStyle = T.muted;
+  ctx.fillText(L.ownerText, L.textX, L.headerTop + PR.ownerSize + 2);
+
+  fontCtx(ctx, L.nameSize, "800");
+  ctx.fillStyle = T.ink;
+  ctx.fillText(L.nameText, L.textX, L.headerTop + PR.ownerSize + 14 + L.nameSize);
+}
+
+function drawDesc(ctx, L) {
+  if (!L.descLines.length) return;
+  const PR = L.PR;
+  fontCtx(ctx, PR.descSize, "400");
+  ctx.fillStyle = L.T.ink2;
+  L.descLines.forEach((ln, i) => {
+    ctx.fillText(ln, L.P, L.descTop + PR.descSize * 1.02 + i * PR.descLH);
+  });
+}
+
+function drawStats(ctx, L) {
+  const T = L.T, PR = L.PR;
+  const iconS = 22;
+  fontCtx(ctx, PR.statSize, "600");
+  ctx.textBaseline = "middle";
+  let x = L.P;
+  L.statItems.forEach((it) => {
+    const cy = L.statsTop + (PR.statSize + 10) / 2;
+    drawStatIcon(ctx, it.icon, x, cy - iconS / 2, iconS, T.ink2);
+    ctx.fillStyle = T.ink2;
+    ctx.fillText(it.text, x + iconS + 9, cy + 1);
+    x += iconS + 9 + ctx.measureText(it.text).width + L.statGap;
+  });
+  ctx.textBaseline = "alphabetic";
+}
+
+function drawBar(ctx, L) {
+  const T = L.T;
+  const b = L.bar;
+  ctx.save();
+  rr(ctx, b.x, b.y, b.w, b.h, b.h / 2);
+  ctx.clip();
+  ctx.fillStyle = T.track;
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  let cx = b.x;
+  b.segs.forEach((s, i) => {
+    const sw = s.pct / 100 * b.w;
+    ctx.fillStyle = s.color;
+    ctx.fillRect(cx, b.y, Math.max(0, sw - (i === b.segs.length - 1 ? 0 : 2)), b.h);
+    cx += sw;
+  });
+  ctx.restore();
+}
+
+function drawLegend(ctx, L) {
+  const T = L.T, PR = L.PR;
+  fontCtx(ctx, PR.legendSize, "500");
+  ctx.textBaseline = "middle";
+  let x = L.P;
+  const ly = L.legendTop + PR.legendSize / 2;
+  for (const item of L.legend) {
+    ctx.fillStyle = item.color;
+    ctx.beginPath(); ctx.arc(x + 7, ly, 7, 0, Math.PI * 2); ctx.fill();
+    x += 22;
+    ctx.fillStyle = T.ink2;
+    ctx.fillText(item.name, x, ly + 1);
+    x += ctx.measureText(item.name).width + 10;
+    ctx.fillStyle = T.muted;
+    ctx.fillText(item.pct + "%", x, ly + 1);
+    x += ctx.measureText(item.pct + "%").width + 26;
+  }
+  ctx.textBaseline = "alphabetic";
+}
+
+function drawTopics(ctx, L) {
+  const T = L.T, PR = L.PR;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  fontCtx(ctx, PR.topicSize, "600");
+  let ty = L.topicsTop;
+  for (const row of L.topicRows) {
+    let x = L.P;
+    for (const t of row) {
+      rr(ctx, x, ty, t.w, L.pillH, L.pillH / 2);
+      ctx.fillStyle = T.accentSoft;
+      ctx.fill();
+      ctx.fillStyle = T.accent;
+      ctx.fillText(t.text, x + t.w / 2, ty + L.pillH / 2 + 1);
+      x += t.w + L.pillGap;
+    }
+    ty += L.pillH + L.pillGap;
+  }
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+}
+
+function drawFooter(ctx, L) {
+  const T = L.T;
+  const fy = L.qrTop + L.qrSize / 2;
+  globeIcon(ctx, L.P, fy - 11, 22, T.muted);
+  fontCtx(ctx, L.PR.linkSize, "400", true);
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = T.muted;
+  ctx.fillText(L.linkText, L.P + 34, fy + 1);
+  ctx.textBaseline = "alphabetic";
+
+  if (L.qrMatrix) {
+    drawQR(ctx, L.qrLeft, L.qrTop, L.qrSize, L.qrMatrix, T.qrFront, T.qrBack, T.line);
+    fontCtx(ctx, 18, "500");
+    ctx.textAlign = "center";
+    ctx.fillStyle = T.muted;
+    ctx.fillText("扫码查看仓库", L.qrLeft + L.qrSize / 2, L.qrTop + L.qrSize + 22);
+    ctx.textAlign = "left";
+  }
+}
+
+function paint(ctx, L, st, scale) {
+  const T = L.T;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, L.W * scale, L.H * scale);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
+  ctx.fillStyle = T.bg;
+  ctx.fillRect(0, 0, L.W, L.H);
+  blob(ctx, L.W * 0.92, -L.H * 0.06, L.W * 0.55, T.decoA, L.W, L.H);
+  blob(ctx, -L.W * 0.02, L.H * 1.04, L.W * 0.5, T.decoB, L.W, L.H);
+
+  drawHeader(ctx, L);
+  drawDesc(ctx, L);
+  drawStats(ctx, L);
+  if (L.bar) { drawBar(ctx, L); drawLegend(ctx, L); }
+  if (L.topicRows.length) drawTopics(ctx, L);
+  drawFooter(ctx, L);
+}
+
+/* ============================================================
+   7. 应用状态
+   ============================================================ */
+const SAMPLE = {
+  owner: "oknoo",
+  name: "1024",
+  desc: "代码卡片、字节透视镜、仓库分享卡——三个单文件浏览器小工具，全部本地渲染，零外联。",
+  stars: 128,
+  forks: 17,
+  watchers: 6,
+  lang: "JavaScript",
+  langs: "CSS 34.6, HTML 12.8",
+  topics: "canvas, 单文件, 零依赖, 工具集",
+  homepage: "",
+  license: "MIT"
+};
+
+const state = {
+  owner: SAMPLE.owner, name: SAMPLE.name, desc: SAMPLE.desc,
+  stars: SAMPLE.stars, forks: SAMPLE.forks, watchers: SAMPLE.watchers,
+  lang: SAMPLE.lang, langs: SAMPLE.langs, topics: SAMPLE.topics,
+  homepage: SAMPLE.homepage, license: SAMPLE.license,
+  theme: "cream", prop: "og", exportScale: 2
+};
+
+const $ = id => document.getElementById(id);
+const els = {
+  preview: $("preview"), stage: $("stage"),
+  themeSw: $("themeSw"), propSeg: $("propSeg"), themeName: $("themeName"),
+  sizeHint: $("sizeHint"), toast: $("toast"), scaleSeg: $("scaleSeg"),
+  inpOwner: $("inpOwner"), inpName: $("inpName"), inpDesc: $("inpDesc"),
+  inpStars: $("inpStars"), inpForks: $("inpForks"), inpWatch: $("inpWatch"),
+  selLang: $("selLang"), inpLangs: $("inpLangs"), inpTopics: $("inpTopics"),
+  inpHome: $("inpHome"), inpLicense: $("inpLicense"), qrPreview: $("qrPreview")
+};
+
+let layoutCache = null;
+
+function render() {
+  const L = computeLayout(state);
+  layoutCache = L;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cv = els.preview;
+  cv.width = Math.round(L.W * dpr);
+  cv.height = Math.round(L.H * dpr);
+  cv.style.width = L.W + "px";
+  paint(cv.getContext("2d"), L, state, dpr);
+  els.sizeHint.textContent = L.W + " × " + L.H + " px · " + state.exportScale + "x 导出";
+}
+
+let rafId = null;
+function scheduleRender() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(render);
+}
+
+/* ============================================================
+   8. 表单 / 控件
+   ============================================================ */
+function readForm() {
+  state.owner = els.inpOwner.value;
+  state.name = els.inpName.value;
+  state.desc = els.inpDesc.value;
+  state.stars = Math.max(0, Math.floor(Number(els.inpStars.value) || 0));
+  state.forks = Math.max(0, Math.floor(Number(els.inpForks.value) || 0));
+  state.watchers = Math.max(0, Math.floor(Number(els.inpWatch.value) || 0));
+  state.lang = els.selLang.value;
+  state.langs = els.inpLangs.value;
+  state.topics = els.inpTopics.value;
+  state.homepage = els.inpHome.value.trim();
+  state.license = els.inpLicense.value.trim();
+  const o = state.owner.trim(), n = state.name.trim();
+  els.qrPreview.textContent = o && n ? "https://github.com/" + o + "/" + n : "github.com/（填写拥有者与仓库名后生成）";
+}
+
+function writeForm() {
+  els.inpOwner.value = state.owner;
+  els.inpName.value = state.name;
+  els.inpDesc.value = state.desc;
+  els.inpStars.value = state.stars;
+  els.inpForks.value = state.forks;
+  els.inpWatch.value = state.watchers;
+  els.selLang.value = LANG_COLORS[state.lang] ? state.lang : "";
+  els.inpLangs.value = state.langs;
+  els.inpTopics.value = state.topics;
+  els.inpHome.value = state.homepage;
+  els.inpLicense.value = state.license;
+  readForm();
+}
+
+["inpOwner", "inpName", "inpDesc", "inpStars", "inpForks", "inpWatch",
+ "selLang", "inpLangs", "inpTopics", "inpHome", "inpLicense"].forEach(id => {
+  $(id).addEventListener("input", () => { readForm(); scheduleRender(); });
+  $(id).addEventListener("change", () => { readForm(); scheduleRender(); });
+});
+
+function buildLangSelect() {
+  let h = '<option value="">不指定</option>';
+  Object.keys(LANG_COLORS).sort().forEach(k => {
+    h += '<option value="' + k + '">' + k + "</option>";
+  });
+  els.selLang.innerHTML = h;
+}
+
+function buildThemeSwatches() {
+  let h = "";
+  for (const k in THEMES) {
+    const T = THEMES[k];
+    h += '<button class="sw" data-theme="' + k + '" title="' + T.name + '" style="background:' + T.bg + '">' +
+      '<i style="top:8px;background:' + T.accent + '"></i>' +
+      '<i style="top:15px;background:' + T.ink2 + ';right:14px"></i>' +
+      '<i style="top:22px;background:' + T.accent + '"></i>' +
+      "</button>";
+  }
+  els.themeSw.innerHTML = h;
+  els.themeSw.querySelectorAll(".sw").forEach(b => {
+    b.addEventListener("click", () => {
+      state.theme = b.dataset.theme;
+      syncSwatches(); scheduleRender();
+    });
+  });
+}
+
+function buildPropSeg() {
+  let h = "";
+  for (const k in PROPS) h += '<button data-prop="' + k + '">' + PROPS[k].name + "</button>";
+  els.propSeg.innerHTML = h;
+  els.propSeg.querySelectorAll("button").forEach(b => {
+    b.addEventListener("click", () => {
+      state.prop = b.dataset.prop;
+      syncSwatches(); scheduleRender();
+    });
+  });
+}
+
+function syncSwatches() {
+  els.themeSw.querySelectorAll(".sw").forEach(b => b.classList.toggle("on", b.dataset.theme === state.theme));
+  els.propSeg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.prop === state.prop));
+  els.themeName.textContent = THEMES[state.theme].name;
+  els.scaleSeg.querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.scale === state.exportScale));
+}
+
+function toast(msg, isErr) {
+  els.toast.textContent = msg;
+  els.toast.className = "toast show" + (isErr ? " err" : "");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { els.toast.className = "toast"; }, 2200);
+}
+
+$("btnSample").addEventListener("click", () => {
+  Object.assign(state, SAMPLE);
+  writeForm(); syncSwatches(); scheduleRender();
+  toast("已载入示例仓库");
+});
+
+$("btnClear").addEventListener("click", () => {
+  state.owner = ""; state.name = ""; state.desc = "";
+  state.stars = 0; state.forks = 0; state.watchers = 0;
+  state.lang = ""; state.langs = ""; state.topics = "";
+  state.homepage = ""; state.license = "";
+  writeForm(); scheduleRender();
+  toast("已清空，卡片进入空白状态");
+});
+
+/* ============================================================
+   9. 导出 / 复制 / 分享
+   ============================================================ */
+function renderToCanvas(scale) {
+  const L = layoutCache || computeLayout(state);
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(L.W * scale);
+  cv.height = Math.round(L.H * scale);
+  paint(cv.getContext("2d"), L, state, scale);
+  return cv;
+}
+
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function safeBase() {
+  const o = (state.owner.trim() || "owner").replace(/[\\/:*?"<>|\s]+/g, "-");
+  const n = (state.name.trim() || "repo").replace(/[\\/:*?"<>|\s]+/g, "-");
+  return o + "-" + n + "-card";
+}
+
+$("btnExport").addEventListener("click", async () => {
+  const scale = state.exportScale;
+  const cv = renderToCanvas(scale);
+  const blob = await new Promise(res => cv.toBlob(res, "image/png"));
+  if (!blob) { toast("导出失败：浏览器未生成 PNG", true); return; }
+  download(blob, safeBase() + "-" + scale + "x.png");
+  toast("已导出 " + scale + "x PNG · " + cv.width + "×" + cv.height);
+});
+
+$("btnCopy").addEventListener("click", async () => {
+  const cv = renderToCanvas(2);
+  const blob = await new Promise(res => cv.toBlob(res, "image/png"));
+  if (!blob) { toast("复制失败：浏览器未生成 PNG", true); return; }
+  try {
+    if (!navigator.clipboard || !window.ClipboardItem) throw new Error("clipboard api unavailable");
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    toast("图片已复制到剪贴板");
+    return;
+  } catch (e) { /* 回退到 execCommand */ }
+  try {
+    const holder = document.createElement("div");
+    holder.style.cssText = "position:fixed;left:-9999px;top:0";
+    const node = document.createElement("canvas");
+    node.width = cv.width; node.height = cv.height;
+    node.getContext("2d").drawImage(cv, 0, 0);
+    holder.appendChild(node); document.body.appendChild(holder);
+    node.focus();
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      sel.removeAllRanges(); sel.addRange(range);
+    }
+    const ok = document.execCommand("copy");
+    if (sel) sel.removeAllRanges();
+    document.body.removeChild(holder);
+    toast(ok ? "图片已复制到剪贴板" : "复制失败：请改用「导出 PNG」", !ok);
+  } catch (e) {
+    toast("复制失败：请改用「导出 PNG」", true);
+  }
+});
+
+/* ---------- 分享链接 ---------- */
+function encodeState(s) {
+  const bytes = new TextEncoder().encode(JSON.stringify(s));
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function decodeState(str) {
+  str = str.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(str);
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function buildShareURL() {
+  const payload = {
+    o: state.owner, n: state.name, d: state.desc,
+    s: state.stars, f: state.forks, w: state.watchers,
+    l: state.lang, g: state.langs, t: state.topics,
+    h: state.homepage, c: state.license, th: state.theme, p: state.prop
+  };
+  return location.href.split("#")[0] + "#r=" + encodeState(payload);
+}
+
+$("btnShare").addEventListener("click", async () => {
+  const url = buildShareURL();
+  try { history.replaceState(null, "", url); }
+  catch (e) { location.hash = "r=" + url.split("#r=")[1]; }
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; } catch (e) { /* 回退 */ }
+  if (!ok) {
+    const ta = document.createElement("textarea");
+    ta.value = url; ta.style.cssText = "position:fixed;left:-9999px";
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+  }
+  toast(ok ? "分享链接已复制，打开即可还原当前内容" : "链接已写入地址栏，请手动复制", !ok);
+});
+
+/* ---------- 键盘快捷键 ---------- */
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === "s") { e.preventDefault(); $("btnExport").click(); }
+  else if (k === "enter") { e.preventDefault(); $("btnCopy").click(); }
+});
+
+/* ============================================================
+   10. 启动
+   ============================================================ */
+function applyState(s) {
+  if (typeof s.o === "string") state.owner = s.o;
+  if (typeof s.n === "string") state.name = s.n;
+  if (typeof s.d === "string") state.desc = s.d;
+  if (typeof s.s === "number") state.stars = Math.max(0, Math.floor(s.s));
+  if (typeof s.f === "number") state.forks = Math.max(0, Math.floor(s.f));
+  if (typeof s.w === "number") state.watchers = Math.max(0, Math.floor(s.w));
+  if (typeof s.l === "string") state.lang = s.l;
+  if (typeof s.g === "string") state.langs = s.g;
+  if (typeof s.t === "string") state.topics = s.t;
+  if (typeof s.h === "string") state.homepage = s.h;
+  if (typeof s.c === "string") state.license = s.c;
+  if (THEMES[s.th]) state.theme = s.th;
+  if (PROPS[s.p]) state.prop = s.p;
+}
+
+function boot() {
+  if (location.hash && location.hash.indexOf("#r=") === 0) {
+    try {
+      applyState(decodeState(location.hash.slice(3)));
+    } catch (e) { /* 非法链接，忽略 */ }
+  }
+
+  buildLangSelect();
+  buildThemeSwatches();
+  buildPropSeg();
+  writeForm();
+  syncSwatches();
+  render();
+  if (location.hash.indexOf("#r=") === 0) toast("已从分享链接还原内容");
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -289,6 +289,10 @@ body{
       <div class="swatches" id="themeSw"></div>
     </div>
     <div class="ctl">
+      <div class="ctl-label">背景 <span class="ph-hint" id="bgName"></span></div>
+      <div class="swatches" id="bgSw"></div>
+    </div>
+    <div class="ctl">
       <div class="ctl-label">画布比例</div>
       <div class="seg full" id="propSeg"></div>
     </div>
@@ -457,10 +461,10 @@ function versionBits(version) {
 /* ---- 掩码 ---- */
 const MASK_FNS = [
   (x, y) => (x + y) % 2 === 0,
-  (x, y) => x % 2 === 0,
-  (x, y) => y % 3 === 0,
+  (x, y) => y % 2 === 0,
+  (x, y) => x % 3 === 0,
   (x, y) => (x + y) % 3 === 0,
-  (x, y) => (Math.floor(x / 2) + Math.floor(y / 3)) % 2 === 0,
+  (x, y) => (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0,
   (x, y) => (x * y) % 2 === 0 && (x * y) % 3 === 0,
   (x, y) => ((x * y) % 2 + (x * y) % 3) % 2 === 0,
   (x, y) => ((x + y) % 2 + (x * y) % 3) % 2 === 0
@@ -732,6 +736,22 @@ const PROPS = {
   }
 };
 
+/* 背景：主题色 / 透明 / 4 种渐变。
+   渐变与主题解耦，但内容色必须随之调整——深渐变强制浅色内容，
+   浅渐变统一深色内容，accent 按底色明暗自动加深或减淡，保证任何组合可读。 */
+const BACKGROUNDS = {
+  theme:      { name: "主题色" },
+  transparent:{ name: "透明" },
+  aurora: { name: "极光", dark: true, type: "linear",
+            stops: [[0, "#00c9a7"], [0.55, "#0b7285"], [1, "#1b2a6b"]] },
+  sunset: { name: "晚霞", dark: true, type: "linear",
+            stops: [[0, "#ff9a44"], [0.5, "#fc6076"], [1, "#7b4397"]] },
+  space:  { name: "深空", dark: true, type: "radial",
+            stops: [[0, "#3a2f6b"], [0.55, "#203a43"], [1, "#0f2027"]] },
+  peach:  { name: "蜜桃", dark: false, type: "linear",
+            stops: [[0, "#ffd6a5"], [0.5, "#ff8fab"], [1, "#c77dff"]] }
+};
+
 /* GitHub Linguist 常用语言色（查表命中忽略大小写，未命中回退灰） */
 const LANG_COLORS = {
   "JavaScript": "#f1e05a", "TypeScript": "#3178c6", "Python": "#3572A5", "Java": "#b07219",
@@ -790,6 +810,51 @@ function hexA(hex, a) {
   const h = hex.replace("#", "");
   const n = parseInt(h.length === 3 ? h.split("").map(c => c + c).join("") : h, 16);
   return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+}
+
+/** 颜色向白 / 黑混合，用于按底色明暗调整 accent */
+function mixColor(hex, target, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = i => {
+    const v = (n >> (16 - i * 8)) & 255;
+    return Math.round(v + (target - v) * f);
+  };
+  return "#" + [ch(0), ch(1), ch(2)].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+const lighten = (hex, f) => mixColor(hex, 255, f);
+const darken = (hex, f) => mixColor(hex, 0, f);
+
+/** 依据背景解析实际绘制用的内容色板 */
+function resolvePalette(st) {
+  const T = THEMES[st.theme];
+  const B = BACKGROUNDS[st.bg] || BACKGROUNDS.theme;
+  if (st.bg === "theme" || st.bg === "transparent") return { T: T, B: B };
+  if (B.dark) {
+    return {
+      T: Object.assign({}, T, {
+        ink: "#F4F6FA",
+        ink2: "#C9D1DC",
+        muted: "rgba(244,246,250,0.60)",
+        line: "rgba(255,255,255,0.18)",
+        track: "rgba(255,255,255,0.16)",
+        accent: lighten(T.accent, 0.5),
+        accentSoft: "rgba(255,255,255,0.15)"
+      }),
+      B: B
+    };
+  }
+  return {
+    T: Object.assign({}, T, {
+      ink: "#3A2E33",
+      ink2: "#6B5560",
+      muted: "rgba(58,46,51,0.58)",
+      line: "rgba(58,46,51,0.14)",
+      track: "rgba(58,46,51,0.10)",
+      accent: darken(T.accent, 0.3),
+      accentSoft: "rgba(255,255,255,0.34)"
+    }),
+    B: B
+  };
 }
 
 /** GitHub 式数字缩写：999 / 1.2k / 12k / 1.5M */
@@ -924,7 +989,9 @@ function parseTopics(str) {
    4. 布局计算（逻辑尺寸 → 块流式排布，剩余空间自动居中分配）
    ============================================================ */
 function computeLayout(st) {
-  const T = THEMES[st.theme];
+  const palette = resolvePalette(st);
+  const T = palette.T;
+  const B = palette.B;
   const PR = PROPS[st.prop];
   const W = PR.W, H = PR.H, P = PR.P;
   const ctx = measCtx;
@@ -1073,7 +1140,7 @@ function computeLayout(st) {
   const linkText = ellipsize(ctx, linkFull, W - P - qrSize - 48 - 34);
 
   return {
-    T: T, PR: PR, W: W, H: H, P: P,
+    T: T, B: B, PR: PR, W: W, H: H, P: P,
     radius: Math.max(0, Math.min(48, Math.round(Number(st.radius) || 0))),
     letter: letter, ownerText: ownerText, nameText: nameText, nameSize: nameSize, textX: textX,
     headerTop: pos.header,
@@ -1347,11 +1414,23 @@ function paint(ctx, L, st, scale) {
     ctx.clip();
   }
 
-  ctx.fillStyle = T.bg;
-  ctx.fillRect(0, 0, L.W, L.H);
-  blob(ctx, L.W * 0.92, -L.H * 0.06, L.W * 0.55, T.decoA, L.W, L.H);
-  blob(ctx, -L.W * 0.02, L.H * 1.04, L.W * 0.5, T.decoB, L.W, L.H);
-
+  // 背景：主题色（含装饰光斑）/ 透明（不填充）/ 渐变
+  if (st.bg === "theme") {
+    ctx.fillStyle = T.bg;
+    ctx.fillRect(0, 0, L.W, L.H);
+    blob(ctx, L.W * 0.92, -L.H * 0.06, L.W * 0.55, T.decoA, L.W, L.H);
+    blob(ctx, -L.W * 0.02, L.H * 1.04, L.W * 0.5, T.decoB, L.W, L.H);
+  } else if (L.B.type === "linear") {
+    const g = ctx.createLinearGradient(0, 0, L.W, L.H);
+    L.B.stops.forEach(s => g.addColorStop(s[0], s[1]));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, L.W, L.H);
+  } else if (L.B.type === "radial") {
+    const g = ctx.createRadialGradient(L.W * 0.32, L.H * 0.18, 20, L.W * 0.5, L.H * 0.55, L.W * 0.85);
+    L.B.stops.forEach(s => g.addColorStop(s[0], s[1]));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, L.W, L.H);
+  }
   drawHeader(ctx, L);
   drawDesc(ctx, L);
   drawStats(ctx, L);
@@ -1382,13 +1461,14 @@ const state = {
   stars: SAMPLE.stars, forks: SAMPLE.forks, watchers: SAMPLE.watchers,
   lang: SAMPLE.lang, langs: SAMPLE.langs, topics: SAMPLE.topics,
   homepage: SAMPLE.homepage, license: SAMPLE.license,
-  theme: "cream", prop: "og", radius: 24, exportScale: 2
+  theme: "cream", prop: "og", radius: 24, bg: "theme", exportScale: 2
 };
 
 const $ = id => document.getElementById(id);
 const els = {
   preview: $("preview"), stage: $("stage"),
   themeSw: $("themeSw"), propSeg: $("propSeg"), themeName: $("themeName"),
+  bgSw: $("bgSw"), bgName: $("bgName"),
   sizeHint: $("sizeHint"), toast: $("toast"), scaleSeg: $("scaleSeg"),
   rngRad: $("rngRad"), valRad: $("valRad"),
   inpOwner: $("inpOwner"), inpName: $("inpName"), inpDesc: $("inpDesc"),
@@ -1485,6 +1565,26 @@ function buildThemeSwatches() {
   });
 }
 
+function buildBgSwatches() {
+  let h = "";
+  for (const k in BACKGROUNDS) {
+    const B = BACKGROUNDS[k];
+    let style;
+    if (k === "theme") style = "background:" + THEMES[state.theme].bg;
+    else if (k === "transparent") style = "background:#fff;background-image:linear-gradient(45deg,#e2e6ee 25%,transparent 25%),linear-gradient(-45deg,#e2e6ee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e2e6ee 75%),linear-gradient(-45deg,transparent 75%,#e2e6ee 75%);background-size:10px 10px;background-position:0 0,0 5px,5px -5px,-5px 0";
+    else if (B.type === "linear") style = "background:linear-gradient(135deg," + B.stops.map(s => s[1]).join(",") + ")";
+    else style = "background:radial-gradient(circle at 30% 20%," + B.stops.map(s => s[1]).join(",") + ")";
+    h += '<button class="sw" data-bg="' + k + '" title="' + B.name + '" style="' + style + '"></button>';
+  }
+  els.bgSw.innerHTML = h;
+  els.bgSw.querySelectorAll(".sw").forEach(b => {
+    b.addEventListener("click", () => {
+      state.bg = b.dataset.bg;
+      syncSwatches(); scheduleRender();
+    });
+  });
+}
+
 function buildPropSeg() {
   let h = "";
   for (const k in PROPS) h += '<button data-prop="' + k + '">' + PROPS[k].name + "</button>";
@@ -1500,6 +1600,10 @@ function buildPropSeg() {
 function syncSwatches() {
   els.themeSw.querySelectorAll(".sw").forEach(b => b.classList.toggle("on", b.dataset.theme === state.theme));
   els.propSeg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.prop === state.prop));
+  els.bgSw.querySelectorAll(".sw").forEach(b => b.classList.toggle("on", b.dataset.bg === state.bg));
+  const tsw = els.bgSw.querySelector('[data-bg="theme"]');
+  if (tsw) tsw.style.background = THEMES[state.theme].bg;
+  els.bgName.textContent = (BACKGROUNDS[state.bg] || BACKGROUNDS.theme).name;
   els.themeName.textContent = THEMES[state.theme].name;
   els.rngRad.value = state.radius;
   els.valRad.textContent = state.radius;
@@ -1625,7 +1729,7 @@ function buildShareURL() {
     s: state.stars, f: state.forks, w: state.watchers,
     l: state.lang, g: state.langs, t: state.topics,
     h: state.homepage, c: state.license, th: state.theme, p: state.prop,
-    r: state.radius
+    r: state.radius, b: state.bg
   };
   return location.href.split("#")[0] + "#r=" + encodeState(payload);
 }
@@ -1672,6 +1776,7 @@ function applyState(s) {
   if (THEMES[s.th]) state.theme = s.th;
   if (PROPS[s.p]) state.prop = s.p;
   if (typeof s.r === "number") state.radius = Math.max(0, Math.min(48, Math.round(s.r)));
+  if (BACKGROUNDS[s.b]) state.bg = s.b;
 }
 
 function boot() {
@@ -1683,6 +1788,7 @@ function boot() {
 
   buildLangSelect();
   buildThemeSwatches();
+  buildBgSwatches();
   buildPropSeg();
   writeForm();
   syncSwatches();

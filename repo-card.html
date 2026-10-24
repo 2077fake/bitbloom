@@ -1629,6 +1629,18 @@ els.rngRad.addEventListener("input", () => {
   scheduleRender();
 });
 
+/* 导出倍率 1x / 2x / 3x：写入 state 并同步选中态与尺寸提示 */
+els.scaleSeg.querySelectorAll("button").forEach(b => {
+  b.addEventListener("click", () => {
+    const s = +b.dataset.scale;
+    if (!(s === 1 || s === 2 || s === 3)) return;
+    state.exportScale = s;
+    syncSwatches();
+    render();                       // 立即刷新尺寸提示（1200 × 630 px · Nx 导出）
+    toast("导出倍率 " + s + "x · " + PROPS[state.prop].W + " × " + PROPS[state.prop].H + " px");
+  });
+});
+
 $("btnClear").addEventListener("click", () => {
   state.owner = ""; state.name = ""; state.desc = "";
   state.stars = 0; state.forks = 0; state.watchers = 0;
@@ -1729,7 +1741,7 @@ function buildShareURL() {
     s: state.stars, f: state.forks, w: state.watchers,
     l: state.lang, g: state.langs, t: state.topics,
     h: state.homepage, c: state.license, th: state.theme, p: state.prop,
-    r: state.radius, b: state.bg
+    r: state.radius, b: state.bg, x: state.exportScale
   };
   return location.href.split("#")[0] + "#r=" + encodeState(payload);
 }
@@ -1777,6 +1789,7 @@ function applyState(s) {
   if (PROPS[s.p]) state.prop = s.p;
   if (typeof s.r === "number") state.radius = Math.max(0, Math.min(48, Math.round(s.r)));
   if (BACKGROUNDS[s.b]) state.bg = s.b;
+  if (s.x === 1 || s.x === 2 || s.x === 3) state.exportScale = s.x;
 }
 
 function boot() {

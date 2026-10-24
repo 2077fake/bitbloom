@@ -127,20 +127,20 @@ footer .dot{margin:0 8px; opacity:.5;}
 
   <main class="tools">
 
-    <section class="tool" style="--tc1:#ff6b8a; --tc2:#ff9a6b;">
+    <section class="tool" style="--tc1:#36c5b0; --tc2:#4b9bff;">
       <div class="num">TOOL 01</div>
-      <h2>二进制画廊</h2>
-      <div class="en">BINARY GALLERY</div>
-      <p>把任意文字或图片转成二进制字节画。文字走 UTF-8 编码逐字节铺成网格，图片走灰度阈值切成马赛克，让「0 和 1」成为可以发出去的视觉语言。</p>
+      <h2>字节透视镜</h2>
+      <div class="en">BYTELENS</div>
+      <p>把一段文本拆成字节，再让字节自己说话。输入文字即可看到 UTF-8 / Latin-1 下的十六进制、二进制与 Base64，也能反过来粘贴字节流，看三种编码各自读出什么。</p>
       <ul>
-        <li>文字模式：任意语言输入，UTF-8 → 二进制网格 + 字符水印</li>
-        <li>图片模式：上传即转，灰度阈值可调，三种画面风格</li>
-        <li>实心方块 / 圆点 / 01 字符三种呈现</li>
-        <li>6 套亮色配色与灵感画廊（1024 / 芯 / 爱心）</li>
-        <li>导出中文文件名 PNG，自带 1024 水印</li>
+        <li>编码输出：按字符分组的十六进制、标准 hex dump、Base64、二进制</li>
+        <li>反向解码：UTF-8 / GBK / Latin-1 三栏并排，自动标注最可能的编码</li>
+        <li>字节网格：按 1 / 2 / 3 / 4 字节着色，一眼看出中文与 Emoji 的占位</li>
+        <li>统计条：字符数、字节数、BOM、Unicode 区段分布</li>
+        <li>全部本地计算，支持一键复制各编码结果</li>
       </ul>
-      <a class="cta" href="binary-gallery.html">打开二进制画廊</a>
-      <span class="file">binary-gallery.html</span>
+      <a class="cta" href="byte-lens.html">打开字节透视镜</a>
+      <span class="file">byte-lens.html</span>
     </section>
 
     <section class="tool" style="--tc1:#7c6cf0; --tc2:#36c5b0;">

@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ByteLens · 字节透视镜 — BitBloom</title>
+<style>
+/* ============================================================
+   ByteLens · 字节透视镜
+   BitBloom 工具之二：把文本/字节流的真实构成摊开来看
+   单文件实现：原生 HTML / CSS / JS，全内联零外联
+   ============================================================ */
+:root{
+  --bg1:#fff7ec; --bg2:#ffe9f0; --card:#ffffff; --ink:#2b2b3a;
+  --muted:#8a8a9a; --line:#ffe1c4; --line2:#f2f4f8;
+  --accent:#ff6b8a;      /* 3 字节 · CJK */
+  --accent2:#36c5b0;     /* 2 字节 */
+  --accent3:#ffc24b;     /* 4 字节 · Emoji */
+  --gray:#7a8296;        /* 1 字节 · ASCII */
+  --danger:#d14545;
+  --ok:#0f9d76;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --radius:16px;
+  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:var(--sans);
+  background:
+    radial-gradient(1100px 520px at 10% -6%, #ffffff 0%, rgba(255,255,255,0) 60%),
+    radial-gradient(820px 460px at 96% 2%, #eafaf6 0%, rgba(234,250,246,0) 55%),
+    linear-gradient(160deg, var(--bg1) 0%, var(--bg2) 60%, #f2f7ff 100%);
+  color:var(--ink); min-height:100vh; padding:16px 16px 44px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 16px;box-shadow:var(--shadow);margin-bottom:14px;
+}
+.brand{display:flex;flex-direction:column;gap:2px;margin-right:auto;min-width:0;}
+.logo{
+  font-size:22px;font-weight:900;letter-spacing:.5px;line-height:1.1;
+  background:linear-gradient(92deg,var(--accent) 0%,var(--accent3) 48%,var(--accent2) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.tag{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.back{
+  font-size:12px;font-weight:700;color:var(--accent2);text-decoration:none;
+  border:1px solid #cdeee7;background:#f0fbf8;border-radius:9px;padding:6px 11px;white-space:nowrap;
+}
+.back:hover{background:#e2f6f1;}
+
+/* ---------- 卡片 ---------- */
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;
+}
+.card-head{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:11px 14px;border-bottom:1px solid var(--line2);background:#fcfcfd;
+}
+.card-head h2{margin:0;font-size:13.5px;font-weight:800;letter-spacing:.3px;}
+.card-head .desc{font-size:11.5px;color:var(--muted);}
+.card-head .spacer{flex:1;}
+.card-body{padding:14px;}
+
+/* ---------- 控件 ---------- */
+.seg{display:inline-flex;background:#f4f5f8;border:1px solid var(--line2);border-radius:10px;padding:3px;gap:2px;}
+.seg button{
+  cursor:pointer;border:none;background:transparent;color:var(--muted);
+  padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;font-family:inherit;transition:.15s;white-space:nowrap;
+}
+.seg button.on{background:#fff;color:var(--accent);box-shadow:0 1px 3px rgba(16,24,40,.10);}
+.btn{
+  cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--ink);
+  border-radius:10px;padding:7px 13px;font-size:12px;font-weight:700;font-family:inherit;transition:.15s;white-space:nowrap;
+}
+.btn:hover{background:#fcfcfd;border-color:#e6d9c6;}
+.btn:active{transform:translateY(1px);}
+.btn.ghost{background:#fff5f8;color:#c2446a;border-color:#ffd9e3;}
+.btn.tiny{padding:4px 9px;font-size:11px;border-radius:8px;}
+
+textarea{
+  width:100%;border:none;outline:none;resize:vertical;background:transparent;
+  font:14px/22px var(--mono);color:var(--ink);padding:14px;min-height:150px;tab-size:4;
+}
+textarea::selection{background:rgba(255,107,138,.22);}
+.foot{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:9px 12px;border-top:1px solid var(--line2);background:#fcfcfd;
+}
+.tip{font-size:11.5px;color:var(--muted);margin-left:auto;}
+
+/* ---------- 统计条 ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;}
+.stat{
+  background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;
+  box-shadow:var(--shadow);
+}
+.stat .k{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;}
+.stat .v{font-size:21px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.15;}
+.stat .v small{font-size:12px;font-weight:700;color:var(--muted);margin-left:2px;}
+.stat .sub{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.5;}
+.bar{display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:8px;background:#f0f1f5;}
+.bar i{display:block;height:100%;}
+
+/* ---------- 编码输出行 ---------- */
+.row{
+  display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px dashed var(--line2);
+}
+.row:last-child{border-bottom:none;}
+.row .label{
+  flex:0 0 82px;font-size:11.5px;font-weight:800;color:var(--ink);padding-top:2px;
+}
+.row .label small{display:block;font-weight:600;color:var(--muted);font-size:10px;margin-top:2px;}
+.row .val{
+  flex:1;min-width:0;font:12.5px/1.75 var(--mono);color:#3c4354;
+  white-space:pre-wrap;word-break:break-all;
+  background:#fafbfc;border:1px solid var(--line2);border-radius:9px;padding:8px 10px;
+  max-height:260px;overflow:auto;
+}
+.row .val.warn{color:var(--danger);background:#fff6f6;border-color:#ffd9d9;}
+.row .ops{flex:0 0 auto;display:flex;gap:6px;padding-top:2px;}
+
+/* ---------- 反向解码三栏 ---------- */
+.decode{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.dcol{border:1px solid var(--line2);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
+.dcol header{
+  padding:8px 11px;background:#fafbfc;border-bottom:1px solid var(--line2);
+  font-size:11.5px;font-weight:800;display:flex;align-items:center;gap:7px;
+}
+.dcol header .tagx{
+  font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:5px;letter-spacing:.3px;
+}
+.dcol .out{
+  flex:1;padding:10px 11px;font:12.5px/1.8 var(--mono);word-break:break-all;
+  min-height:74px;max-height:190px;overflow:auto;color:#3c4354;
+}
+.dcol.ok header .tagx{background:#e6f7f1;color:var(--ok);}
+.dcol.bad header .tagx{background:#ffecec;color:var(--danger);}
+.dcol.bad .out{color:#a08a8a;}
+.dcol .meta{padding:7px 11px;border-top:1px solid var(--line2);font-size:10.5px;color:var(--muted);background:#fcfcfd;}
+
+/* ---------- 字节网格 ---------- */
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--muted);}
+.legend span{display:inline-flex;align-items:center;gap:6px;font-weight:600;}
+.legend i{width:11px;height:11px;border-radius:3px;display:block;}
+.grid{
+  display:flex;flex-wrap:wrap;gap:7px;font-family:var(--mono);
+}
+.cell{
+  border:1px solid var(--line2);border-radius:10px;padding:6px 8px;min-width:56px;
+  background:#fafbfc;display:flex;flex-direction:column;gap:4px;align-items:center;
+}
+.cell .ch{font-size:17px;font-weight:700;line-height:1.1;color:var(--ink);}
+.cell .hexes{display:flex;gap:3px;}
+.cell .hexes b{
+  font:700 9.5px/1 var(--mono);padding:2px 4px;border-radius:4px;color:#fff;letter-spacing:.2px;
+}
+.cell .bits{font:9px/1 var(--mono);color:var(--muted);letter-spacing:-.2px;}
+.cell.b1{background:#f7f8fa;}
+.cell.b2{background:#f0fbf8;border-color:#cdeee7;}
+.cell.b3{background:#fff5f8;border-color:#ffd9e3;}
+.cell.b4{background:#fffaf0;border-color:#ffe9c4;}
+.cell.bx{background:#fff6f6;border-color:#ffd9d9;}
+.cell.b1 .hexes b{background:var(--gray);}
+.cell.b2 .hexes b{background:var(--accent2);}
+.cell.b3 .hexes b{background:var(--accent);}
+.cell.b4 .hexes b{background:var(--accent3);}
+.cell.bx .hexes b{background:var(--danger);}
+.note{font-size:11.5px;color:var(--muted);line-height:1.7;margin:10px 0 0;}
+.empty{font-size:12.5px;color:var(--muted);padding:22px;text-align:center;}
+
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);
+  background:rgba(17,20,27,.94);color:#fff;font-size:13px;font-weight:600;
+  padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.24s;z-index:99;
+  box-shadow:0 10px 30px rgba(0,0,0,.22);max-width:86vw;text-align:center;
+}
+.toast.show{opacity:1;transform:translate(-50%,0);}
+.toast.err{background:#a51d2d;}
+
+@media (max-width:860px){
+  .decode{grid-template-columns:1fr;}
+  .row{flex-wrap:wrap;}
+  .row .label{flex:0 0 100%;}
+  .row .ops{margin-left:auto;}
+  .logo{font-size:19px;}
+}
+@media (max-width:560px){
+  body{padding:10px 10px 34px;}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">ByteLens · 字节透视镜</div>
+      <div class="tag">把文本与字节流的真实构成摊开来看 · 排查乱码，从猜变成看</div>
+    </div>
+    <a class="back" href="index.html">返回 BitBloom</a>
+  </header>
+
+  <!-- 输入 -->
+  <section class="card">
+    <div class="card-head">
+      <h2>输入</h2>
+      <div class="seg" id="modeSeg">
+        <button data-mode="text" class="on">文本</button>
+        <button data-mode="hex">十六进制</button>
+        <button data-mode="base64">Base64</button>
+      </div>
+      <span class="spacer"></span>
+      <span class="desc" id="modeDesc">直接粘贴文本，实时分析其 UTF-8 字节构成</span>
+    </div>
+    <textarea id="input" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="soft"></textarea>
+    <div class="foot">
+      <button class="btn ghost" id="btnSample">示例</button>
+      <button class="btn" id="btnClear">清空</button>
+      <span class="tip" id="inputTip">Tab 缩进 4 空格 · 所有计算均在本地完成</span>
+    </div>
+  </section>
+
+  <!-- 统计 -->
+  <section class="stats" id="stats"></section>
+
+  <!-- 编码输出 -->
+  <section class="card" id="encodePanel">
+    <div class="card-head">
+      <h2>编码输出</h2>
+      <span class="desc">当前文本在目标编码下的字节表示，可直接复制使用</span>
+    </div>
+    <div class="card-body" id="encodeBody"></div>
+  </section>
+
+  <!-- 反向解码 -->
+  <section class="card" id="decodePanel">
+    <div class="card-head">
+      <h2>反向解码</h2>
+      <span class="desc">把输入当作字节流，分别按三种编码解读——能读出人话的那个，就是它本来的编码</span>
+    </div>
+    <div class="card-body">
+      <div class="decode" id="decodeBody"></div>
+      <p class="note" id="decodeNote"></p>
+    </div>
+  </section>
+
+  <!-- 字节网格 -->
+  <section class="card">
+    <div class="card-head">
+      <h2>字节网格</h2>
+      <span class="desc">逐字符展开其 UTF-8 字节，按字节数着色</span>
+      <span class="spacer"></span>
+      <span class="desc" id="gridCount"></span>
+    </div>
+    <div class="card-body">
+      <div class="legend">
+        <span><i style="background:#7a8296"></i>1 字节 · ASCII</span>
+        <span><i style="background:#36c5b0"></i>2 字节 · 拉丁扩展等</span>
+        <span><i style="background:#ff6b8a"></i>3 字节 · 中日韩</span>
+        <span><i style="background:#ffc24b"></i>4 字节 · Emoji 与生僻字</span>
+        <span><i style="background:#d14545"></i>异常序列</span>
+      </div>
+      <div class="grid" id="grid"></div>
+      <p class="note" id="gridNote"></p>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   1. 字节与编码工具
+   ============================================================ */
+const UTF8_ENC = new TextEncoder();
+
+function bytesToBase64(bytes) {
+  let bin = "";
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+  }
+  return btoa(bin);
+}
+
+function base64ToBytes(s) {
+  const cleaned = s.replace(/[^A-Za-z0-9+/=]/g, "").replace(/=+$/, "");
+  if (!cleaned) return new Uint8Array(0);
+  const bin = atob(cleaned);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function parseHex(s) {
+  const cleaned = s.replace(/0[xX]/g, "").replace(/[^0-9a-fA-F]/g, "");
+  if (!cleaned) return new Uint8Array(0);
+  if (cleaned.length % 2 !== 0) throw new Error("十六进制字符数为奇数，无法构成完整字节");
+  const bytes = new Uint8Array(cleaned.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(cleaned.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+function hexSpaced(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length; i++) out.push(("0" + bytes[i].toString(16)).slice(-2).toUpperCase());
+  return out;
+}
+
+function decodeAs(bytes, enc) {
+  try { return new TextDecoder(enc, { fatal: false }).decode(bytes); }
+  catch (e) { return null; }
+}
+
+function isPrintableAscii(b) { return b >= 0x20 && b <= 0x7E; }
+
+/** 按 Unicode 区段归类码点 */
+function blockOf(cp) {
+  if (cp < 0x80) return "ascii";
+  if (cp < 0x100) return "latin1";
+  if ((cp >= 0x2E80 && cp <= 0x9FFF) || (cp >= 0xF900 && cp <= 0xFAFF) ||
+      (cp >= 0xFF00 && cp <= 0xFFEF) || (cp >= 0x3000 && cp <= 0x303F)) return "cjk";
+  if (cp >= 0x1F000) return "emoji";
+  if (cp >= 0x2600 && cp <= 0x27BF) return "symbol";
+  if (cp >= 0x2000 && cp <= 0x206F) return "punct";
+  if (cp >= 0x1E00 && cp <= 0x1EFF) return "latin";
+  return "other";
+}
+
+const BLOCK_LABEL = {
+  ascii: "ASCII", latin1: "拉丁扩展", latin: "拉丁扩展附加",
+  cjk: "中日韩", emoji: "Emoji", symbol: "符号", punct: "标点", other: "其他"
+};
+
+const BLOCK_COLOR = {
+  ascii: "#7a8296", latin1: "#36c5b0", latin: "#36c5b0",
+  cjk: "#ff6b8a", emoji: "#ffc24b", symbol: "#a78bfa", punct: "#94a3b8", other: "#64748b"
+};
+
+/** 拉丁-1 编码：全部码点须 < 256，否则不可表示 */
+function latin1Bytes(text) {
+  const arr = [];
+  for (const ch of text) {
+    const c = ch.codePointAt(0);
+    if (c > 0xFF) return null;
+    arr.push(c);
+  }
+  return new Uint8Array(arr);
+}
+
+/** UTF-8 BOM 检测 */
+function hasBOM(bytes) { return bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF; }
+
+/* ============================================================
+   2. 状态与 DOM
+   ============================================================ */
+const state = { mode: "text", raw: "" };
+
+const SAMPLE = 'Hello 世界！\nconsole.log("让比特可见");\n// 中文每字 3 字节，Emoji 每字 4 字节 ✨';
+
+const $ = id => document.getElementById(id);
+const els = {
+  input: $("input"), modeSeg: $("modeSeg"), modeDesc: $("modeDesc"),
+  stats: $("stats"), encodePanel: $("encodePanel"), encodeBody: $("encodeBody"),
+  decodePanel: $("decodePanel"), decodeBody: $("decodeBody"), decodeNote: $("decodeNote"),
+  grid: $("grid"), gridCount: $("gridCount"), gridNote: $("gridNote"), toast: $("toast")
+};
+
+let raf = null;
+function schedule() { if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(run); }
+
+function toast(msg, isErr) {
+  els.toast.textContent = msg;
+  els.toast.className = "toast show" + (isErr ? " err" : "");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { els.toast.className = "toast"; }, 2200);
+}
+
+async function copy(text, label) {
+  try { await navigator.clipboard.writeText(text); toast((label || "内容") + "已复制"); return; }
+  catch (e) { /* 回退 */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.cssText = "position:fixed;left:-9999px";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    toast(ok ? (label || "内容") + "已复制" : "复制失败，请手动选择", !ok);
+  } catch (e) { toast("复制失败，请手动选择", true); }
+}
+
+/* ============================================================
+   3. 主流程
+   ============================================================ */
+function run() {
+  const raw = els.input.value;
+  state.raw = raw;
+
+  let bytes = null, err = null, text = null;
+  try {
+    if (state.mode === "text") { text = raw; bytes = UTF8_ENC.encode(raw); }
+    else if (state.mode === "hex") { bytes = parseHex(raw); text = decodeAs(bytes, "utf-8"); }
+    else { bytes = base64ToBytes(raw); text = decodeAs(bytes, "utf-8"); }
+  } catch (e) { err = e.message; }
+
+  if (err) {
+    els.stats.innerHTML = '<div class="stat" style="grid-column:1/-1"><div class="k">输入解析</div>' +
+      '<div class="v" style="color:var(--danger);font-size:15px">' + err + '</div>' +
+      '<div class="sub">请检查输入格式后重试</div></div>';
+    els.encodePanel.style.display = "none";
+    els.decodePanel.style.display = "none";
+    els.grid.innerHTML = '<div class="empty">输入无法解析为字节流</div>';
+    els.gridNote.textContent = "";
+    els.gridCount.textContent = "";
+    return;
+  }
+
+  renderStats(bytes, text);
+  renderEncode(text);
+  renderDecode(bytes);
+  renderGrid(text);
+}
+
+/* ---------- 3.1 统计 ---------- */
+function renderStats(bytes, text) {
+  const n = bytes.length;
+  let printable = 0, high = 0, nul = 0;
+  for (let i = 0; i < n; i++) {
+    if (isPrintableAscii(bytes[i])) printable++;
+    if (bytes[i] >= 0x80) high++;
+    if (bytes[i] === 0) nul++;
+  }
+
+  const tiles = [];
+
+  if (state.mode === "text") {
+    const chars = Array.from(text).length;
+    const lines = text === "" ? 0 : text.split(/\r\n|\r|\n/).length;
+    const bom = hasBOM(bytes) || text.charCodeAt(0) === 0xFEFF;
+    const nonAscii = Array.from(text).filter(c => c.codePointAt(0) >= 0x80).length;
+    tiles.push(
+      stat("字符数", chars, "Unicode 码点数"),
+      stat("UTF-8 字节数", n, chars ? ("平均 " + (n / chars).toFixed(2) + " 字节/字") : "—"),
+      stat("行数", lines, ""),
+      stat("BOM", bom ? "有" : "无", bom ? "文件头含 EF BB BF" : "无字节顺序标记")
+    );
+
+    // 区段分布
+    const dist = {};
+    for (const ch of text) { const b = blockOf(ch.codePointAt(0)); dist[b] = (dist[b] || 0) + 1; }
+    const entries = Object.keys(dist).map(k => [k, dist[k]]).sort((a, b) => b[1] - a[1]);
+    let bar = "", legend = "";
+    entries.forEach(([k, v]) => {
+      const pct = (v / chars * 100).toFixed(1);
+      bar += '<i style="width:' + pct + '%;background:' + BLOCK_COLOR[k] + '"></i>';
+      legend += '<span>' + BLOCK_LABEL[k] + ' ' + pct + '%</span>';
+    });
+    tiles.push(
+      '<div class="stat" style="grid-column:span 2"><div class="k">Unicode 区段分布</div>' +
+      '<div class="bar">' + (bar || '<i style="width:100%;background:#f0f1f5"></i>') + '</div>' +
+      '<div class="sub" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:7px">' + (legend || "—") + '</div></div>'
+    );
+  } else {
+    const repl = (text.match(/\uFFFD/g) || []).length;
+    tiles.push(
+      stat("字节总数", n, "来自" + (state.mode === "hex" ? "十六进制" : "Base64") + "输入"),
+      stat("可打印 ASCII", printable, ((printable / (n || 1) * 100).toFixed(1)) + "% 占比"),
+      stat("高位字节", high, "≥ 0x80，占 " + ((high / (n || 1) * 100).toFixed(1)) + "%"),
+      stat("替换字符", repl, repl ? "按 UTF-8 解读存在损坏" : "按 UTF-8 解读无损坏")
+    );
+    tiles.push(
+      '<div class="stat" style="grid-column:span 2"><div class="k">NUL 与空白</div>' +
+      '<div class="v" style="font-size:18px">' + nul + ' <small>个 NUL</small></div>' +
+      '<div class="sub">NUL 字节常见于定长字段填充或二进制残留</div></div>'
+    );
+  }
+
+  els.stats.innerHTML = tiles.join("");
+}
+
+function stat(k, v, sub) {
+  return '<div class="stat"><div class="k">' + k + '</div>' +
+    '<div class="v">' + v + (sub ? ' <small></small>' : '') + '</div>' +
+    (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div>';
+}
+
+/* ---------- 3.2 编码输出 ---------- */
+
+/** 把字符串按固定长度切成多行（用于 Base64 等纯文本） */
+function chunkStr(s, per) {
+  if (per <= 0) return s;
+  const out = [];
+  for (let i = 0; i < s.length; i += per) out.push(s.slice(i, i + per));
+  return out.join("\n");
+}
+
+/**
+ * 按字节数把「带字节数的片段」分组成多行，保证每行总字节数不超过 limit。
+ * 用于「按字符分组」的十六进制输出，既保留字符边界，又不会出现超长单行。
+ */
+function chunkGroups(items, limit) {
+  const lines = [];
+  let cur = [], curBytes = 0;
+  for (const it of items) {
+    if (cur.length && curBytes + it.bytes > limit) { lines.push(cur.join("   ")); cur = []; curBytes = 0; }
+    cur.push(it.text); curBytes += it.bytes;
+    if (curBytes >= limit) { lines.push(cur.join("   ")); cur = []; curBytes = 0; }
+  }
+  if (cur.length) lines.push(cur.join("   "));
+  return lines.join("\n");
+}
+
+function renderEncode(text) {
+  if (state.mode !== "text") {
+    els.encodePanel.style.display = "none";
+    els.encodePanel.dataset.stale = "1";
+    return;
+  }
+  if (els.encodePanel.dataset.stale === "1") {
+    els.encodePanel.style.display = "";
+    els.encodePanel.dataset.stale = "";
+  }
+
+  if (text === "") {
+    els.encodeBody.innerHTML = '<div class="empty">输入文本后显示编码结果</div>';
+    return;
+  }
+
+  const u8 = UTF8_ENC.encode(text);
+  const l1 = latin1Bytes(text);
+  const rows = [];
+
+  // UTF-8 · 十六进制（按字符分组，每行累计不超过 8 字节）
+  const groups = [];
+  for (const ch of text) {
+    const b = UTF8_ENC.encode(ch);
+    groups.push({ bytes: b.length, text: hexSpaced(b).join(" ") });
+  }
+  rows.push(row("UTF-8 十六进制", "按字符分组，每行 ≤ 8 字节",
+    chunkGroups(groups, 8), false, "UTF-8 十六进制", hexSpaced(u8).join("")));
+
+  // UTF-8 · 连续十六进制（标准 hex dump：每行 8 字节）
+  const hexPairs = hexSpaced(u8);
+  const hexLines = [];
+  for (let i = 0; i < hexPairs.length; i += 8) hexLines.push(hexPairs.slice(i, i + 8).join(" "));
+  rows.push(row("UTF-8 十六进制流", "标准 hex dump，每行 8 字节",
+    hexLines.join("\n"), false, "UTF-8 连续十六进制", hexPairs.join("")));
+
+  // UTF-8 · Base64（MIME 标准每行 76 字符）
+  rows.push(row("UTF-8 Base64", "每行 76 字符，可直接用于 Data URL",
+    chunkStr(bytesToBase64(u8), 76), false, "UTF-8 Base64", bytesToBase64(u8)));
+
+  // UTF-8 · 二进制（每行 4 字节，便于逐位对照）
+  const binPairs = [];
+  for (let i = 0; i < u8.length; i++) binPairs.push(("00000000" + u8[i].toString(2)).slice(-8));
+  const binLines = [];
+  for (let i = 0; i < binPairs.length; i += 4) binLines.push(binPairs.slice(i, i + 4).join(" "));
+  rows.push(row("UTF-8 二进制", "每行 4 字节", binLines.join("\n"), false, "UTF-8 二进制", binPairs.join(" ")));
+
+  // Latin-1
+  if (l1) {
+    const l1Pairs = hexSpaced(l1);
+    const l1Lines = [];
+    for (let i = 0; i < l1Pairs.length; i += 8) l1Lines.push(l1Pairs.slice(i, i + 8).join(" "));
+    rows.push(row("Latin-1 十六进制", "ISO-8859-1，每行 8 字节",
+      l1Lines.join("\n"), false, "Latin-1 十六进制", l1Pairs.join("")));
+    rows.push(row("Latin-1 Base64", "每行 76 字符",
+      chunkStr(bytesToBase64(l1), 76), false, "Latin-1 Base64", bytesToBase64(l1)));
+  } else {
+    const bad = Array.from(text).find(c => c.codePointAt(0) > 0xFF);
+    rows.push(row("Latin-1", "单字节编码，仅能表示 U+0000–U+00FF",
+      "当前文本含超出 Latin-1 范围的字符（如 U+" + bad.codePointAt(0).toString(16).toUpperCase() + "），无法用 Latin-1 表示",
+      true, ""));
+  }
+
+  els.encodeBody.innerHTML = rows.join("");
+}
+
+/**
+ * 生成一行编码输出。
+ * @param copyValue 可选：点击「复制」时实际写入剪贴板的内容，默认等于展示值。
+ *                  用于「展示用 hex dump 分行、复制给无分隔连续串」的场景。
+ */
+function row(label, sub, value, warn, copyLabel, copyValue) {
+  const cv = copyValue === undefined ? value : copyValue;
+  return '<div class="row"><div class="label">' + label + (sub ? "<small>" + sub + "</small>" : "") + '</div>' +
+    '<div class="val' + (warn ? " warn" : "") + '">' + escapeHtml(value) + '</div>' +
+    (warn ? "" : '<div class="ops"><button class="btn tiny" data-copy="' + escapeAttr(copyLabel) + '" data-val="' + escapeAttr(cv) + '">复制</button></div>') +
+    '</div>';
+}
+
+/* ---------- 3.3 反向解码 ---------- */
+function renderDecode(bytes) {
+  const isByteMode = state.mode !== "text";
+  els.decodePanel.style.display = isByteMode ? "" : "none";
+  if (!isByteMode) return;
+
+  if (bytes.length === 0) {
+    els.decodeBody.innerHTML = '<div class="empty" style="grid-column:1/-1">输入字节流后显示三种编码的解读结果</div>';
+    els.decodeNote.textContent = "";
+    return;
+  }
+
+  const encs = [
+    { key: "utf-8", name: "UTF-8", note: "万维网标准，中文每字 3 字节" },
+    { key: "gbk", name: "GBK", note: "中文 Windows 常用，中文每字 2 字节" },
+    { key: "latin1", name: "Latin-1", note: "单字节，西欧字符" }
+  ];
+
+  let cols = "", best = null, bestScore = -1;
+  const results = [];
+
+  encs.forEach(e => {
+    const s = decodeAs(bytes, e.key);
+    const repl = s === null ? -1 : (s.match(/\uFFFD/g) || []).length;
+    results.push({ e, s, repl });
+  });
+
+  results.forEach(r => {
+    if (r.s === null) return;
+    // 评分：替换字符越少越好；同等条件下字符数越少越可能正确（GBK 2字节/字 会得到更少字符）
+    const score = -r.repl * 1000 - r.s.length;
+    if (score > bestScore) { bestScore = score; best = r.e.key; }
+  });
+
+  results.forEach(r => {
+    const ok = r.s !== null && r.repl === 0;
+    const badge = r.s === null ? "不可用" : (r.repl === 0 ? "无替换字符" : r.repl + " 处替换字符");
+    cols += '<div class="dcol ' + (ok ? "ok" : "bad") + '">' +
+      '<header>' + r.e.name +
+      (best === r.e.key && ok ? ' <span class="tagx">最可能</span>' : '') +
+      '<span class="tagx">' + badge + '</span></header>' +
+      '<div class="out">' + (r.s === null ? "该编码不可用" : escapeHtml(r.s)) + '</div>' +
+      '<div class="meta">' + r.e.note + ' · ' + (r.s === null ? "—" : r.s.length + " 个字符") + '</div>' +
+      '</div>';
+  });
+
+  els.decodeBody.innerHTML = cols;
+
+  const good = results.filter(r => r.s !== null && r.repl === 0);
+  if (good.length === 0) {
+    els.decodeNote.textContent = "三种编码都出现替换字符——字节流可能已损坏，或不属于这三种编码。";
+  } else if (good.length === 1) {
+    els.decodeNote.textContent = "只有 " + good[0].e.name + " 能无损坏解读，这段字节的原始编码基本可以确定。";
+  } else {
+    els.decodeNote.textContent = good.map(g => g.e.name).join(" 与 ") + " 都能无损坏解读——字节较简单时会出现这种情况，可结合语义进一步判断。";
+  }
+}
+
+/* ---------- 3.4 字节网格 ---------- */
+function renderGrid(text) {
+  if (state.mode !== "text" || text === "") {
+    els.grid.innerHTML = '<div class="empty">' +
+      (state.mode === "text" ? "输入文本后逐字符展开字节" : "字节模式下请在「反向解码」查看解读结果") + '</div>';
+    els.gridNote.textContent = "";
+    els.gridCount.textContent = "";
+    return;
+  }
+
+  const chars = Array.from(text);
+  const LIMIT = 300;
+  const shown = chars.slice(0, LIMIT);
+  let html = "";
+
+  shown.forEach(ch => {
+    const cp = ch.codePointAt(0);
+    const b = UTF8_ENC.encode(ch);
+    const cls = "cell b" + b.length;
+    let hexes = "", bits = "";
+    for (let i = 0; i < b.length; i++) {
+      hexes += "<b>" + ("0" + b[i].toString(16)).slice(-2).toUpperCase() + "</b>";
+      bits += ("00000000" + b[i].toString(2)).slice(-8) + " ";
+    }
+    const label = ch === " " ? "␠" : (ch === "\t" ? "⇥" : ch);
+    html += '<div class="' + cls + '" title="U+' + cp.toString(16).toUpperCase().padStart(4, "0") + '">' +
+      '<div class="ch">' + escapeHtml(label) + '</div>' +
+      '<div class="hexes">' + hexes + '</div>' +
+      '<div class="bits">' + bits.trim() + '</div></div>';
+  });
+
+  els.grid.innerHTML = html;
+  els.gridCount.textContent = chars.length + " 个字符";
+  els.gridNote.textContent = chars.length > LIMIT
+    ? "仅展示前 " + LIMIT + " 个字符（共 " + chars.length + " 个），完整字节请查看上方「编码输出」。"
+    : "悬停任意方块可查看该字符的 Unicode 码点。";
+}
+
+/* ============================================================
+   4. 工具函数
+   ============================================================ */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/`/g, "&#96;");
+}
+
+/* ============================================================
+   5. 交互
+   ============================================================ */
+els.input.addEventListener("input", () => { state.raw = els.input.value; schedule(); });
+els.input.addEventListener("keydown", e => {
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const s = els.input.selectionStart, t = els.input.selectionEnd;
+    els.input.value = els.input.value.slice(0, s) + "    " + els.input.value.slice(t);
+    els.input.selectionStart = els.input.selectionEnd = s + 4;
+    schedule();
+  }
+});
+
+const MODE_DESC = {
+  text: "直接粘贴文本，实时分析其 UTF-8 字节构成",
+  hex: "输入十六进制字节（可含空格、换行、0x 前缀），查看三种编码的解读结果",
+  base64: "输入 Base64 字符串，查看三种编码的解读结果"
+};
+
+els.modeSeg.querySelectorAll("button").forEach(b => {
+  b.addEventListener("click", () => {
+    state.mode = b.dataset.mode;
+    els.modeSeg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    els.modeDesc.textContent = MODE_DESC[state.mode];
+    schedule();
+  });
+});
+
+$("btnSample").addEventListener("click", () => {
+  els.input.value = SAMPLE;
+  state.mode = "text";
+  els.modeSeg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.mode === "text"));
+  els.modeDesc.textContent = MODE_DESC.text;
+  schedule();
+  toast("已载入示例文本");
+});
+
+$("btnClear").addEventListener("click", () => {
+  els.input.value = "";
+  schedule();
+});
+
+// 复制按钮（事件委托）
+document.addEventListener("click", e => {
+  const btn = e.target.closest("[data-copy]");
+  if (!btn) return;
+  copy(btn.dataset.val, btn.dataset.copy);
+});
+
+/* ---------- 快捷键 ---------- */
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === "k") { e.preventDefault(); els.input.focus(); els.input.select(); }
+});
+
+/* ---------- 启动 ---------- */
+els.input.value = SAMPLE;
+run();
+</script>
+</body>
+</html>

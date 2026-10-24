@@ -154,6 +154,9 @@ body{
 .sw.on{box-shadow:0 0 0 2px var(--accent);}
 .sw i{position:absolute;left:6px;right:6px;height:3px;border-radius:2px;display:block;}
 
+.ctl input[type=range]{width:100%;accent-color:var(--accent);margin:0;}
+.ctl-label b{color:var(--accent);font-variant-numeric:tabular-nums;}
+
 .seg.full{display:flex;width:100%;}
 .seg.full button{flex:1;text-align:center;}
 
@@ -288,6 +291,10 @@ body{
     <div class="ctl">
       <div class="ctl-label">画布比例</div>
       <div class="seg full" id="propSeg"></div>
+    </div>
+    <div class="ctl">
+      <div class="ctl-label">圆角 <b id="valRad">24</b> <span class="ph-hint">导出 PNG 四角透明</span></div>
+      <input type="range" id="rngRad" min="0" max="48" step="2" value="24">
     </div>
     <div class="ctl">
       <div class="ctl-label">二维码 <span class="ph-hint">手写编码器</span></div>
@@ -928,7 +935,6 @@ function computeLayout(st) {
 
   const textX = P + PR.avatar + 26;
   const nameCap = W - P - textX;
-
   // 仓库名字号自适应（超宽逐级缩小，仍超宽则省略）
   let nameSize = PR.nameSize;
   fontCtx(ctx, nameSize, "800");
@@ -1068,6 +1074,7 @@ function computeLayout(st) {
 
   return {
     T: T, PR: PR, W: W, H: H, P: P,
+    radius: Math.max(0, Math.min(48, Math.round(Number(st.radius) || 0))),
     letter: letter, ownerText: ownerText, nameText: nameText, nameSize: nameSize, textX: textX,
     headerTop: pos.header,
     descLines: lp.dLines, descTop: pos.desc,
@@ -1334,6 +1341,12 @@ function paint(ctx, L, st, scale) {
   ctx.clearRect(0, 0, L.W * scale, L.H * scale);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
+  // 圆角裁剪：整幅卡片按圆角裁切，四角在导出 PNG 中为透明像素
+  if (L.radius > 0) {
+    rr(ctx, 0, 0, L.W, L.H, L.radius);
+    ctx.clip();
+  }
+
   ctx.fillStyle = T.bg;
   ctx.fillRect(0, 0, L.W, L.H);
   blob(ctx, L.W * 0.92, -L.H * 0.06, L.W * 0.55, T.decoA, L.W, L.H);
@@ -1369,7 +1382,7 @@ const state = {
   stars: SAMPLE.stars, forks: SAMPLE.forks, watchers: SAMPLE.watchers,
   lang: SAMPLE.lang, langs: SAMPLE.langs, topics: SAMPLE.topics,
   homepage: SAMPLE.homepage, license: SAMPLE.license,
-  theme: "cream", prop: "og", exportScale: 2
+  theme: "cream", prop: "og", radius: 24, exportScale: 2
 };
 
 const $ = id => document.getElementById(id);
@@ -1377,6 +1390,7 @@ const els = {
   preview: $("preview"), stage: $("stage"),
   themeSw: $("themeSw"), propSeg: $("propSeg"), themeName: $("themeName"),
   sizeHint: $("sizeHint"), toast: $("toast"), scaleSeg: $("scaleSeg"),
+  rngRad: $("rngRad"), valRad: $("valRad"),
   inpOwner: $("inpOwner"), inpName: $("inpName"), inpDesc: $("inpDesc"),
   inpStars: $("inpStars"), inpForks: $("inpForks"), inpWatch: $("inpWatch"),
   selLang: $("selLang"), inpLangs: $("inpLangs"), inpTopics: $("inpTopics"),
@@ -1393,6 +1407,7 @@ function render() {
   cv.width = Math.round(L.W * dpr);
   cv.height = Math.round(L.H * dpr);
   cv.style.width = L.W + "px";
+  cv.style.borderRadius = L.radius + "px";   // 预览同步呈现圆角
   paint(cv.getContext("2d"), L, state, dpr);
   els.sizeHint.textContent = L.W + " × " + L.H + " px · " + state.exportScale + "x 导出";
 }
@@ -1486,6 +1501,8 @@ function syncSwatches() {
   els.themeSw.querySelectorAll(".sw").forEach(b => b.classList.toggle("on", b.dataset.theme === state.theme));
   els.propSeg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.prop === state.prop));
   els.themeName.textContent = THEMES[state.theme].name;
+  els.rngRad.value = state.radius;
+  els.valRad.textContent = state.radius;
   els.scaleSeg.querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.scale === state.exportScale));
 }
 
@@ -1500,6 +1517,12 @@ $("btnSample").addEventListener("click", () => {
   Object.assign(state, SAMPLE);
   writeForm(); syncSwatches(); scheduleRender();
   toast("已载入示例仓库");
+});
+
+els.rngRad.addEventListener("input", () => {
+  state.radius = Math.max(0, Math.min(48, Math.round(+els.rngRad.value || 0)));
+  els.valRad.textContent = state.radius;
+  scheduleRender();
 });
 
 $("btnClear").addEventListener("click", () => {
@@ -1601,7 +1624,8 @@ function buildShareURL() {
     o: state.owner, n: state.name, d: state.desc,
     s: state.stars, f: state.forks, w: state.watchers,
     l: state.lang, g: state.langs, t: state.topics,
-    h: state.homepage, c: state.license, th: state.theme, p: state.prop
+    h: state.homepage, c: state.license, th: state.theme, p: state.prop,
+    r: state.radius
   };
   return location.href.split("#")[0] + "#r=" + encodeState(payload);
 }
@@ -1647,6 +1671,7 @@ function applyState(s) {
   if (typeof s.c === "string") state.license = s.c;
   if (THEMES[s.th]) state.theme = s.th;
   if (PROPS[s.p]) state.prop = s.p;
+  if (typeof s.r === "number") state.radius = Math.max(0, Math.min(48, Math.round(s.r)));
 }
 
 function boot() {

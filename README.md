@@ -148,4 +148,4 @@ ByteLens 部分：
 
 ## 许可
 
-[MIT](./LICENSE) © 2026 黄金阳
+[MIT](./LICENSE) © 2026 oknoo

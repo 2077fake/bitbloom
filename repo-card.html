@@ -133,13 +133,6 @@ body{
   overflow:auto;
 }
 #preview{max-width:100%;height:auto;display:block;border-radius:4px;}
-/* 透明背景：预览台换成深色棋盘格，深色主题的浅色文字才看得清 */
-.stage.alpha{
-  background-color:#262b36;
-  background-image:linear-gradient(45deg,#323845 25%,transparent 25%),linear-gradient(-45deg,#323845 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#323845 75%),linear-gradient(-45deg,transparent 75%,#323845 75%);
-  background-size:20px 20px;
-  background-position:0 0,0 10px,10px -10px,-10px 0;
-}
 
 /* ---------- 控制面板 ---------- */
 .controls{
@@ -314,11 +307,12 @@ body{
     <div class="ctl">
       <div class="ctl-label">主题 <span class="ph-hint" id="themeName"></span></div>
       <div class="swatches" id="themeSw"></div>
+      <div class="ctl-note">卡片面板自身的配色：底色、文字与强调色。</div>
     </div>
     <div class="ctl">
       <div class="ctl-label">背景 <span class="ph-hint" id="bgName"></span></div>
       <div class="swatches" id="bgSw"></div>
-      <div class="ctl-note">「主题色」跟随主题；渐变背景下点主题会自动切回。</div>
+      <div class="ctl-note">卡片外那一圈画布底：满幅 / 透明 / 4 种渐变，与主题互不覆盖。</div>
     </div>
     <div class="ctl">
       <div class="ctl-label">GitHub API <span class="ph-hint" id="apiQuota">60 / 60 · 匿名</span></div>
@@ -330,7 +324,7 @@ body{
       <div class="seg full" id="propSeg"></div>
     </div>
     <div class="ctl">
-      <div class="ctl-label">圆角 <b id="valRad">24</b> <span class="ph-hint">导出 PNG 四角透明</span></div>
+      <div class="ctl-label">圆角 <b id="valRad">24</b> <span class="ph-hint">导出 PNG 四角透明 · 面板圆角联动</span></div>
       <input type="range" id="rngRad" min="0" max="48" step="2" value="24">
     </div>
     <div class="ctl">
@@ -769,21 +763,25 @@ const PROPS = {
   }
 };
 
-/* 背景：主题色 / 透明 / 4 种渐变。
-   渐变与主题解耦，但内容色必须随之调整——深渐变强制浅色内容，
-   浅渐变统一深色内容，accent 按底色明暗自动加深或减淡，保证任何组合可读。 */
+/* 背景 = 卡片外那一圈画布底；主题 = 卡片面板自身的配色（底色 + 文字 + 强调色）。
+   参照 CodeCard 的分层：背景只画外层，主题面板永远压在背景之上，两个维度互不覆盖。
+   full = 卡片铺满画布（没有外圈）；flat = 外层透明；linear / radial = 外层渐变。 */
 const BACKGROUNDS = {
-  theme:      { name: "主题色" },
-  transparent:{ name: "透明" },
-  aurora: { name: "极光", dark: true, type: "linear",
+  theme:      { name: "满幅主题" },
+  transparent:{ name: "透明", type: "flat" },
+  aurora: { name: "极光", type: "linear",
             stops: [[0, "#00c9a7"], [0.55, "#0b7285"], [1, "#1b2a6b"]] },
-  sunset: { name: "晚霞", dark: true, type: "linear",
+  sunset: { name: "晚霞", type: "linear",
             stops: [[0, "#ff9a44"], [0.5, "#fc6076"], [1, "#7b4397"]] },
-  space:  { name: "深空", dark: true, type: "radial",
+  space:  { name: "深空", type: "radial",
             stops: [[0, "#3a2f6b"], [0.55, "#203a43"], [1, "#0f2027"]] },
-  peach:  { name: "蜜桃", dark: false, type: "linear",
+  peach:  { name: "蜜桃", type: "linear",
             stops: [[0, "#ffd6a5"], [0.5, "#ff8fab"], [1, "#c77dff"]] }
 };
+
+/* 面板内缩量：背景不是「满幅主题」时，卡片面板离画布边缘留出这么多距离，露出外圈背景。
+   数值同时决定投影空间——投影 blur 20 + offsetY 9 ≈ 29，须小于内缩量才不会在画布边缘被切平。 */
+const PANEL_INSET = 32;
 
 /* GitHub Linguist 常用语言色（查表命中忽略大小写，未命中回退灰） */
 const LANG_COLORS = {
@@ -845,48 +843,11 @@ function hexA(hex, a) {
   return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
 }
 
-/** 颜色向白 / 黑混合，用于按底色明暗调整 accent */
-function mixColor(hex, target, f) {
-  const n = parseInt(hex.slice(1), 16);
-  const ch = i => {
-    const v = (n >> (16 - i * 8)) & 255;
-    return Math.round(v + (target - v) * f);
-  };
-  return "#" + [ch(0), ch(1), ch(2)].map(v => v.toString(16).padStart(2, "0")).join("");
-}
-const lighten = (hex, f) => mixColor(hex, 255, f);
-const darken = (hex, f) => mixColor(hex, 0, f);
-
-/** 依据背景解析实际绘制用的内容色板 */
+/** 主题决定卡片面板配色，背景只管外圈画布底——两个维度互不覆盖 */
 function resolvePalette(st) {
-  const T = THEMES[st.theme];
-  const B = BACKGROUNDS[st.bg] || BACKGROUNDS.theme;
-  if (st.bg === "theme" || st.bg === "transparent") return { T: T, B: B };
-  if (B.dark) {
-    return {
-      T: Object.assign({}, T, {
-        ink: "#F4F6FA",
-        ink2: "#C9D1DC",
-        muted: "rgba(244,246,250,0.60)",
-        line: "rgba(255,255,255,0.18)",
-        track: "rgba(255,255,255,0.16)",
-        accent: lighten(T.accent, 0.5),
-        accentSoft: "rgba(255,255,255,0.15)"
-      }),
-      B: B
-    };
-  }
   return {
-    T: Object.assign({}, T, {
-      ink: "#3A2E33",
-      ink2: "#6B5560",
-      muted: "rgba(58,46,51,0.58)",
-      line: "rgba(58,46,51,0.14)",
-      track: "rgba(58,46,51,0.10)",
-      accent: darken(T.accent, 0.3),
-      accentSoft: "rgba(255,255,255,0.34)"
-    }),
-    B: B
+    T: THEMES[st.theme] || THEMES.cream,
+    B: BACKGROUNDS[st.bg] || BACKGROUNDS.theme
   };
 }
 
@@ -910,6 +871,10 @@ function hostOf(url) {
 
 const CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF5E\u3000-\u303F]/;
 /** 中英混排折行：CJK 单字可断，拉丁按词断（超长词强制逐字断） */
+/* 中文避头尾：这些字符不能出现在行首，这些不能出现在行尾 */
+const NO_LINE_START = /^[，。、；：？！）】》」』”’·…—～%,.;:?!)\]}>]/;
+const NO_LINE_END = /[（【《「『“‘([{<]$/;
+
 function wrapText(ctx, text, maxW, maxLines) {
   const src = String(text || "").replace(/\r\n?/g, "\n");
   const lines = [];
@@ -934,8 +899,27 @@ function wrapText(ctx, text, maxW, maxLines) {
       }
       if (!line) { line = unit; continue; }
       if (ctx.measureText(line + unit).width <= maxW) { line += unit; continue; }
-      lines.push(line.replace(/[ \t]+$/, ""));
-      line = unit;
+      /* 断行前先做避头尾处理：
+         - 下一单元以收尾标点开头 → 把当前行末一个字连同标点一起挪到下一行；
+         - 当前行以左括号结尾 → 把该括号挪到下一行；若整行只剩它一个字符，
+           宁可让本行略微超宽（悬挂），也不让孤零零的括号单独占一行。 */
+      let carry = "";
+      if (NO_LINE_START.test(unit) && Array.from(line).length > 1) {
+        const chars = Array.from(line);
+        carry = chars.pop();
+        line = chars.join("");
+      } else if (NO_LINE_END.test(line)) {
+        if (Array.from(line).length > 1) {
+          const chars = Array.from(line);
+          carry = chars.pop();
+          line = chars.join("");
+        } else {
+          line += unit;      // 括号单独成行 → 允许超宽，让它跟着下一单元走
+          continue;
+        }
+      }
+      if (line) lines.push(line.replace(/[ \t]+$/, ""));
+      line = carry + unit;
     }
     if (line) lines.push(line.replace(/[ \t]+$/, ""));
   }
@@ -1026,7 +1010,14 @@ function computeLayout(st) {
   const T = palette.T;
   const B = palette.B;
   const PR = PROPS[st.prop];
-  const W = PR.W, H = PR.H, P = PR.P;
+  /* 画布固定 1200×630 / 1080×1080；背景非「满幅主题」时，主题面板内缩，坐标全部按面板尺寸算。
+     关键：内边距随内缩量同比减少（P' = PR.P - inset），使内容框在「画布坐标系」里的
+     位置和尺寸与满幅模式完全一致——文字、二维码、色块一概不重排，只是主题面板向内收。
+     否则面板变矮会挤爆块流（og 内缩 32 后内容底边会越过二维码区 38px）。 */
+  const inset = st.bg === "theme" ? 0 : PANEL_INSET;
+  const W = PR.W - inset * 2, H = PR.H - inset * 2;
+  const P = Math.max(16, PR.P - inset);
+  const radius = Math.max(0, Math.min(48, Math.round(Number(st.radius) || 0)));
   const ctx = measCtx;
 
   const owner = String(st.owner || "").trim() || "owner";
@@ -1173,8 +1164,13 @@ function computeLayout(st) {
   const linkText = ellipsize(ctx, linkFull, W - P - qrSize - 48 - 34);
 
   return {
-    T: T, B: B, PR: PR, W: W, H: H, P: P,
-    radius: Math.max(0, Math.min(48, Math.round(Number(st.radius) || 0))),
+    T: T, B: B, PR: PR,
+    W: PR.W, H: PR.H,              // 画布尺寸（导出 PNG 的实际像素）
+    inset: inset,                  // 面板内缩量
+    panelW: W, panelH: H,          // 主题面板尺寸
+    panelRadius: inset === 0 ? radius : Math.max(8, Math.min(28, radius)),
+    P: P,
+    radius: radius,
     letter: letter, ownerText: ownerText, nameText: nameText, nameSize: nameSize, textX: textX,
     avatar: st.avatar || null,
     headerTop: pos.header,
@@ -1454,39 +1450,70 @@ function paint(ctx, L, st, scale) {
   ctx.clearRect(0, 0, L.W * scale, L.H * scale);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
-  // 圆角裁剪：整幅卡片按圆角裁切，四角在导出 PNG 中为透明像素
+  // 整幅画布圆角裁剪：导出 PNG 四角为透明像素
   if (L.radius > 0) {
     rr(ctx, 0, 0, L.W, L.H, L.radius);
     ctx.clip();
   }
 
-  // 背景：主题色（含装饰光斑）/ 透明（不填充）/ 渐变
-  if (st.bg === "theme") {
+  /* ---- 第 1 层：背景层（只管卡片外那一圈画布底，不参与面板配色） ---- */
+  const B = L.B;
+  if (B.type === "linear") {
+    const g = ctx.createLinearGradient(0, 0, L.W, L.H);
+    B.stops.forEach(s => g.addColorStop(s[0], s[1]));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, L.W, L.H);
+  } else if (B.type === "radial") {
+    const g = ctx.createRadialGradient(L.W * 0.32, L.H * 0.18, 20, L.W * 0.5, L.H * 0.55, L.W * 0.85);
+    B.stops.forEach(s => g.addColorStop(s[0], s[1]));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, L.W, L.H);
+  }
+  // B.type === "flat"（透明）：外圈不填，画布留空 → 导出 PNG 外圈透明
+
+  /* ---- 第 2 层：主题面板（底色 + 圆角 + 投影，永远压在背景之上） ---- */
+  const px = L.inset, py = L.inset, pw = L.panelW, ph = L.panelH;
+  if (L.inset > 0) {
+    /* 投影：内缩量需容得下 blur + offset，否则会被画布边缘切平。
+       外圈透明时不画投影——半透明黑影落在透明像素上会变成一圈脏边。 */
+    if (st.bg !== "transparent") {
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.30)";
+      ctx.shadowBlur = 20;
+      ctx.shadowOffsetY = 9;
+      ctx.fillStyle = T.bg;
+      rr(ctx, px, py, pw, ph, L.panelRadius);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.fillStyle = T.bg;
+      rr(ctx, px, py, pw, ph, L.panelRadius);
+      ctx.fill();
+    }
+  } else {
     ctx.fillStyle = T.bg;
     ctx.fillRect(0, 0, L.W, L.H);
-    blob(ctx, L.W * 0.92, -L.H * 0.06, L.W * 0.55, T.decoA, L.W, L.H);
-    blob(ctx, -L.W * 0.02, L.H * 1.04, L.W * 0.5, T.decoB, L.W, L.H);
-  } else if (L.B.type === "linear") {
-    const g = ctx.createLinearGradient(0, 0, L.W, L.H);
-    L.B.stops.forEach(s => g.addColorStop(s[0], s[1]));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, L.W, L.H);
-    blob(ctx, L.W * 0.92, -L.H * 0.06, L.W * 0.55, T.decoA, L.W, L.H);
-    blob(ctx, -L.W * 0.02, L.H * 1.04, L.W * 0.5, T.decoB, L.W, L.H);
-  } else if (L.B.type === "radial") {
-    const g = ctx.createRadialGradient(L.W * 0.32, L.H * 0.18, 20, L.W * 0.5, L.H * 0.55, L.W * 0.85);
-    L.B.stops.forEach(s => g.addColorStop(s[0], s[1]));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, L.W, L.H);
-    blob(ctx, L.W * 0.92, -L.H * 0.06, L.W * 0.55, T.decoA, L.W, L.H);
-    blob(ctx, -L.W * 0.02, L.H * 1.04, L.W * 0.5, T.decoB, L.W, L.H);
   }
+
+  // 面板内部：裁剪到圆角内，再平移到面板原点，后续内容全部按面板坐标绘制
+  ctx.save();
+  if (L.inset > 0) {
+    rr(ctx, px, py, pw, ph, L.panelRadius);
+    ctx.clip();
+    ctx.translate(px, py);
+  }
+
+  // 主题装饰光斑（属于主题层，只在面板内）
+  blob(ctx, pw * 0.92, -ph * 0.06, pw * 0.55, T.decoA, pw, ph);
+  blob(ctx, -pw * 0.02, ph * 1.04, pw * 0.5, T.decoB, pw, ph);
+
   drawHeader(ctx, L);
   drawDesc(ctx, L);
   drawStats(ctx, L);
   if (L.bar) { drawBar(ctx, L); drawLegend(ctx, L); }
   if (L.topicRows.length) drawTopics(ctx, L);
   drawFooter(ctx, L);
+  ctx.restore();
 }
 
 /* ============================================================
@@ -1553,6 +1580,16 @@ function render() {
   cv.height = Math.round(L.H * dpr);
   cv.style.width = L.W + "px";
   cv.style.borderRadius = L.radius + "px";   // 预览同步呈现圆角
+  /* 透明背景：外圈画布底为空，用棋盘格衬在画布元素下，让「透明」在预览里看得见
+     （画布自身透明像素会透出元素背景，面板部分仍是不透明的主题底色） */
+  const alpha = state.bg === "transparent";
+  cv.style.backgroundColor = alpha ? "#F7F8FB" : "";
+  cv.style.backgroundImage = alpha
+    ? "linear-gradient(45deg,#dfe3ea 25%,transparent 25%),linear-gradient(-45deg,#dfe3ea 25%,transparent 25%)," +
+      "linear-gradient(45deg,transparent 75%,#dfe3ea 75%),linear-gradient(-45deg,transparent 75%,#dfe3ea 75%)"
+    : "";
+  cv.style.backgroundSize = alpha ? "16px 16px" : "";
+  cv.style.backgroundPosition = alpha ? "0 0,0 8px,8px -8px,-8px 0" : "";
   paint(cv.getContext("2d"), L, state, dpr);
   els.sizeHint.textContent = L.W + " × " + L.H + " px · " + state.exportScale + "x 导出";
 }
@@ -1625,15 +1662,8 @@ function buildThemeSwatches() {
   els.themeSw.querySelectorAll(".sw").forEach(b => {
     b.addEventListener("click", () => {
       state.theme = b.dataset.theme;
-      /* 主题 = 整体配色方案。若当前是渐变背景，主题底色会被渐变盖住、内容色又由渐变明暗接管，
-         实测换主题只影响 1.3% 像素（肉眼等于没反应），唯一变化的是背景组里的「主题色」色块。
-         这里自动切回「主题色」背景，保证点击即刻可见。 */
-      if (BACKGROUNDS[state.bg] && BACKGROUNDS[state.bg].type) {
-        state.bg = "theme";
-        toast("已切回「主题色」背景，完整显示「" + THEMES[state.theme].name + "」配色");
-      } else if (state.bg === "transparent") {
-        toast("透明背景保持不变，仅文字与强调色随「" + THEMES[state.theme].name + "」变化");
-      }
+      /* 主题 = 面板自身的配色（底色 + 文字 + 强调色），背景 = 面板外那一圈画布底。
+         两者正交：换主题只改面板，背景原样保留，任何背景下点主题都立刻可见。 */
       syncSwatches(); scheduleRender();
     });
   });
@@ -1682,7 +1712,6 @@ function syncSwatches() {
   els.rngRad.value = state.radius;
   els.valRad.textContent = state.radius;
   els.scaleSeg.querySelectorAll("button").forEach(b => b.classList.toggle("on", +b.dataset.scale === state.exportScale));
-  els.stage.classList.toggle("alpha", state.bg === "transparent");   // 透明背景时预览台换深色棋盘格
 }
 
 function toast(msg, isErr) {
